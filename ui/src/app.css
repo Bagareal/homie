@@ -72,7 +72,6 @@
 body {
   margin: 0;
   background-color: var(--bg);
-  background-image: var(--bg-image, none);
   background-size: cover;
   background-position: center;
   background-attachment: fixed;
@@ -164,7 +163,7 @@ select {
   left: 0;
   right: 0;
   top: 100%;
-  height: 28px;
+  height: 20px;
   background: linear-gradient(var(--bg), transparent);
   pointer-events: none;
 }
@@ -199,7 +198,7 @@ select {
 .edit-hint {
   max-width: 1440px;
   margin: 0 auto;
-  padding: 0 20px 10px;
+  padding: 20px 20px 10px;
   color: var(--muted);
 }
 
@@ -208,7 +207,7 @@ select {
 .shelves {
   max-width: 1440px;
   margin: 0 auto;
-  padding: 0 20px 48px;
+  padding: 20px 20px 48px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -218,6 +217,9 @@ select {
   display: flex;
   flex-direction: column;
   align-items: center;
+  align-self: center;
+  width: var(--row-width);
+  max-width: 100%;
   padding-bottom: 22px;
   border-bottom: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
 }

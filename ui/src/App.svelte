@@ -36,8 +36,11 @@
       else root.style.removeProperty(name)
     }
 
-    if (cfg.settings.backgroundImage) root.style.setProperty('--bg-image', `url("backgrounds/${cfg.settings.backgroundImage}")`)
-    else root.style.removeProperty('--bg-image')
+    // Set directly on body.style rather than through a --bg-image custom
+    // property: a relative url() inside a custom property can resolve
+    // against the wrong base (the stylesheet consuming it, not the
+    // document) depending on the browser, which silently 404s the image.
+    document.body.style.backgroundImage = cfg.settings.backgroundImage ? `url("backgrounds/${cfg.settings.backgroundImage}")` : ''
   })
 
   // The backend computes status; here it's just re-read.
