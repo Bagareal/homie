@@ -31,10 +31,6 @@ type Item struct {
 	Icon        string `json:"icon"`
 	Description string `json:"description"`
 	Check       bool   `json:"check"`
-	// IconInset shrinks the icon within its tile, to match icon sets
-	// whose artwork fills the canvas edge-to-edge instead of carrying
-	// its own padding like most others.
-	IconInset bool `json:"iconInset,omitempty"`
 }
 
 type Group struct {

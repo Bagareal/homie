@@ -8,7 +8,6 @@ export interface Item {
   icon: string
   description: string
   check: boolean
-  iconInset: boolean
 }
 
 export interface Group {

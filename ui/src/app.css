@@ -398,14 +398,17 @@ button.tape:hover {
 }
 
 .icon img {
-  width: 100%;
-  height: 100%;
+  /* Capped at 70% rather than 100%+object-fit: some icon sets (e.g. the
+     dashboard-icons CDN) ship artwork that fills its own canvas edge to
+     edge, others bake in their own margin — at 100% that mismatch reads
+     as wildly inconsistent icon sizes across tiles. Capping every icon's
+     own box to a fraction of the tile normalizes them without needing
+     per-icon tuning. */
+  width: auto;
+  height: auto;
+  max-width: 70%;
+  max-height: 70%;
   object-fit: contain;
-}
-
-.icon.inset img {
-  padding: 16%;
-  box-sizing: border-box;
 }
 
 .icon .initials {

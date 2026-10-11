@@ -65,7 +65,7 @@
 </script>
 
 {#snippet body()}
-  <Icon icon={item.icon} name={item.name} inset={item.iconInset} />
+  <Icon icon={item.icon} name={item.name} />
   <span class="text">
     <span class="name">{item.name}</span>
   </span>

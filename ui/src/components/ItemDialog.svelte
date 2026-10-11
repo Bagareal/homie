@@ -19,8 +19,6 @@
   // svelte-ignore state_referenced_locally
   let check = $state(item?.check ?? true)
   // svelte-ignore state_referenced_locally
-  let iconInset = $state(item?.iconInset ?? false)
-  // svelte-ignore state_referenced_locally
   let target = $state(groupId)
   let error = $state('')
 
@@ -48,7 +46,6 @@
       icon: icon.trim(),
       description: description.trim(),
       check,
-      iconInset,
     })
     dialog.close()
   }
@@ -81,14 +78,9 @@
       Icon
       <span class="with-preview">
         <input bind:value={icon} placeholder="proxmox" maxlength="500" />
-        <Icon {icon} name={name || '?'} inset={iconInset} />
+        <Icon {icon} name={name || '?'} />
       </span>
       <small>Name from the dashboard-icons collection (e.g. proxmox, truenas-scale, adguard-home), an image address, a file in /icons/, or an emoji.</small>
-    </label>
-
-    <label class="check">
-      <input type="checkbox" bind:checked={iconInset} />
-      Shrink icon (for logos that fill their whole square, to match the others)
     </label>
 
     <label>
