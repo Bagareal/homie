@@ -8,6 +8,7 @@
   const routeFromHash = () => (location.hash === '#/settings' ? 'settings' : 'dashboard')
   let route = $state(routeFromHash())
   let loadError = $state('')
+  let bgLayer: HTMLDivElement | undefined = $state()
 
   onMount(() => {
     const onHash = () => (route = routeFromHash())
@@ -36,11 +37,18 @@
       else root.style.removeProperty(name)
     }
 
-    // Set directly on body.style rather than through a --bg-image custom
-    // property: a relative url() inside a custom property can resolve
-    // against the wrong base (the stylesheet consuming it, not the
-    // document) depending on the browser, which silently 404s the image.
-    document.body.style.backgroundImage = cfg.settings.backgroundImage ? `url("backgrounds/${cfg.settings.backgroundImage}")` : ''
+    // The image lives on its own layer (not body's background) so its
+    // opacity can be lowered without fading the page content above it,
+    // leaving the solid background color (body's own background) as the
+    // full-opacity base underneath. Set directly on the element's style
+    // rather than through a --bg-image custom property: a relative url()
+    // inside a custom property can resolve against the wrong base (the
+    // stylesheet consuming it, not the document) depending on the
+    // browser, which silently 404s the image.
+    if (bgLayer) {
+      bgLayer.style.backgroundImage = cfg.settings.backgroundImage ? `url("backgrounds/${cfg.settings.backgroundImage}")` : ''
+      bgLayer.style.opacity = String((cfg.settings.backgroundOpacity ?? 100) / 100)
+    }
   })
 
   // The backend computes status; here it's just re-read.
@@ -52,6 +60,8 @@
     return () => clearInterval(t)
   })
 </script>
+
+<div class="bg-layer" bind:this={bgLayer} aria-hidden="true"></div>
 
 {#if loadError}
   <main class="state">

@@ -72,15 +72,25 @@
 body {
   margin: 0;
   background-color: var(--bg);
-  background-size: cover;
-  background-position: center;
-  background-attachment: fixed;
-  background-repeat: no-repeat;
   color: var(--text);
   font-family: var(--font);
   font-size: 16px;
   line-height: 1.4;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Holds the optional background image on its own layer, under the solid
+   body background-color, so its opacity can be lowered independently of
+   the page content and without exposing anything but that solid color
+   underneath. */
+.bg-layer {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  pointer-events: none;
 }
 
 :focus-visible {

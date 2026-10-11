@@ -30,6 +30,10 @@ type Settings struct {
 	// BackgroundImage is a filename inside <data>/backgrounds, served at
 	// GET /backgrounds/{name}; empty = no image (plain BackgroundColor).
 	BackgroundImage string `json:"backgroundImage,omitempty"`
+	// BackgroundOpacity is 1-100; 0 (and thus omitted) normalizes to 100
+	// (fully opaque), matching every image uploaded before this setting
+	// existed. Below the image, BackgroundColor always stays full opacity.
+	BackgroundOpacity int `json:"backgroundOpacity,omitempty"`
 }
 
 type Item struct {
@@ -57,10 +61,11 @@ func Default() Config {
 	return Config{
 		Title: "Homelab",
 		Settings: Settings{
-			Theme:         "auto",
-			Density:       "comfortable",
-			CheckInterval: 60,
-			OpenInNewTab:  true,
+			Theme:             "auto",
+			Density:           "comfortable",
+			CheckInterval:     60,
+			OpenInNewTab:      true,
+			BackgroundOpacity: 100,
 		},
 		Groups: []Group{},
 	}
@@ -77,6 +82,9 @@ func (c *Config) normalize() {
 	}
 	if c.Settings.CheckInterval == 0 {
 		c.Settings.CheckInterval = d.Settings.CheckInterval
+	}
+	if c.Settings.BackgroundOpacity == 0 {
+		c.Settings.BackgroundOpacity = d.Settings.BackgroundOpacity
 	}
 	if c.Groups == nil {
 		c.Groups = []Group{}
@@ -116,6 +124,9 @@ func (c Config) Validate() error {
 	}
 	if img := c.Settings.BackgroundImage; img != "" && !safeFilename.MatchString(img) {
 		return errors.New("invalid background image filename")
+	}
+	if o := c.Settings.BackgroundOpacity; o < 0 || o > 100 {
+		return errors.New("background opacity must be between 0 and 100")
 	}
 
 	seen := map[string]bool{}

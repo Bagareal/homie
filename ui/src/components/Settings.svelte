@@ -162,6 +162,21 @@
       <input bind:this={bgInput} type="file" accept="image/png,image/jpeg" hidden onchange={uploadBg} />
     </div>
     <p class="hint">JPEG or PNG, up to 10 MB. Covers the full page; the background color above still shows at the edges and before it loads.</p>
+
+    {#if s.backgroundImage}
+      <label class="opacity-row">
+        Background image opacity
+        <input
+          type="range"
+          min="1"
+          max="100"
+          value={s.backgroundOpacity}
+          onchange={(e) => set('backgroundOpacity', Number(e.currentTarget.value))}
+        />
+        <span>{s.backgroundOpacity}%</span>
+      </label>
+      <p class="hint">Lower it to let the page background color underneath show through.</p>
+    {/if}
   </section>
 
   <section>
@@ -215,5 +230,22 @@
     width: 36px;
     height: 28px;
     padding: 2px;
+  }
+
+  .opacity-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+    font-weight: 600;
+  }
+  .opacity-row input[type='range'] {
+    flex: 1;
+    max-width: 240px;
+  }
+  .opacity-row span {
+    font-weight: 500;
+    color: var(--muted);
+    min-width: 3.5ch;
   }
 </style>
