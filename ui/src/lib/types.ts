@@ -24,6 +24,7 @@ export interface Settings {
   backgroundColor?: string
   tileColor?: string
   accentColor?: string
+  backgroundImage?: string
 }
 
 export interface Config {

@@ -9,6 +9,7 @@
   let title = $state(app.config!.title)
   let version = $state('')
   let fileInput: HTMLInputElement
+  let bgInput: HTMLInputElement
 
   onMount(() => {
     api.getVersion().then((v) => (version = v.version)).catch(() => {})
@@ -28,6 +29,29 @@
 
   function resetColor(key: 'backgroundColor' | 'tileColor' | 'accentColor') {
     set(key, undefined)
+  }
+
+  async function uploadBg(e: Event) {
+    const file = (e.currentTarget as HTMLInputElement).files?.[0]
+    bgInput.value = ''
+    if (!file) return
+    try {
+      await api.uploadBackground(file)
+      await app.load()
+      app.notify('Background image updated')
+    } catch (err) {
+      app.notify(`Upload failed: ${(err as Error).message}`, true)
+    }
+  }
+
+  async function removeBg() {
+    try {
+      await api.removeBackground()
+      await app.load()
+      app.notify('Background image removed')
+    } catch (err) {
+      app.notify(`Could not remove the image: ${(err as Error).message}`, true)
+    }
   }
 
   function exportConfig() {
@@ -129,6 +153,15 @@
       <button type="button" onclick={() => resetColor('accentColor')}>Reset</button>
     </div>
     <p class="hint">Resetting a color goes back to the theme's own default (light or dark, depending on the Theme setting above).</p>
+
+    <div class="row">
+      <button type="button" onclick={() => bgInput.click()}>{s.backgroundImage ? 'Replace background image' : 'Upload background image'}</button>
+      {#if s.backgroundImage}
+        <button type="button" onclick={removeBg}>Remove background image</button>
+      {/if}
+      <input bind:this={bgInput} type="file" accept="image/png,image/jpeg" hidden onchange={uploadBg} />
+    </div>
+    <p class="hint">JPEG or PNG, up to 10 MB. Covers the full page; the background color above still shows at the edges and before it loads.</p>
   </section>
 
   <section>

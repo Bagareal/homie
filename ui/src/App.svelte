@@ -35,6 +35,9 @@
       if (value) root.style.setProperty(name, value)
       else root.style.removeProperty(name)
     }
+
+    if (cfg.settings.backgroundImage) root.style.setProperty('--bg-image', `url("backgrounds/${cfg.settings.backgroundImage}")`)
+    else root.style.removeProperty('--bg-image')
   })
 
   // The backend computes status; here it's just re-read.

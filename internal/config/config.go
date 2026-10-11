@@ -14,6 +14,11 @@ import (
 
 var hexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
+// safeFilename matches the names Homie itself generates for uploaded
+// background images (e.g. "bg-1739203812123456789.jpg"). Validated here too
+// in case a config.json was imported or hand-edited.
+var safeFilename = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,120}$`)
+
 type Settings struct {
 	Theme           string `json:"theme"`         // auto | light | dark
 	Density         string `json:"density"`       // compact | comfortable
@@ -22,6 +27,9 @@ type Settings struct {
 	BackgroundColor string `json:"backgroundColor,omitempty"` // #rrggbb; empty = theme default
 	TileColor       string `json:"tileColor,omitempty"`       // #rrggbb; empty = theme default
 	AccentColor     string `json:"accentColor,omitempty"`     // #rrggbb; empty = theme default
+	// BackgroundImage is a filename inside <data>/backgrounds, served at
+	// GET /backgrounds/{name}; empty = no image (plain BackgroundColor).
+	BackgroundImage string `json:"backgroundImage,omitempty"`
 }
 
 type Item struct {
@@ -105,6 +113,9 @@ func (c Config) Validate() error {
 		if v != "" && !hexColor.MatchString(v) {
 			return fmt.Errorf("invalid %s color: must be in #rrggbb format", name)
 		}
+	}
+	if img := c.Settings.BackgroundImage; img != "" && !safeFilename.MatchString(img) {
+		return errors.New("invalid background image filename")
 	}
 
 	seen := map[string]bool{}

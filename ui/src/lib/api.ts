@@ -25,3 +25,11 @@ export const putConfig = (cfg: Config) =>
 export const getStatus = () => request<Record<string, Status>>('api/status')
 
 export const getVersion = () => request<{ version: string }>('api/version')
+
+export const uploadBackground = (file: File) => {
+  const form = new FormData()
+  form.append('file', file)
+  return request<Config>('api/background', { method: 'POST', body: form })
+}
+
+export const removeBackground = () => request<Config>('api/background', { method: 'DELETE' })

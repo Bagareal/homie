@@ -4,9 +4,14 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"image"
+	_ "image/jpeg" // registers the JPEG decoder used by image.DecodeConfig
+	_ "image/png"  // registers the PNG decoder used by image.DecodeConfig
 	"io"
 	"io/fs"
 	"net/http"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -17,6 +22,15 @@ import (
 )
 
 const maxBody = 1 << 20
+
+// maxUploadBody and maxImageDim bound background image uploads: a generous
+// size for a photo, and a sanity cap on pixel dimensions so a crafted file
+// with a tiny byte size but an enormous declared resolution can't force the
+// browser (or a future server-side decode) into excessive memory use.
+const (
+	maxUploadBody = 10 << 20
+	maxImageDim   = 8000
+)
 
 // startTime acts as Last-Modified for the files embedded in the binary.
 var startTime = time.Now()
@@ -40,6 +54,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/status", s.getStatus)
 	mux.HandleFunc("GET /api/version", s.getVersion)
 	mux.HandleFunc("GET /icons/{name}", s.icon)
+	mux.HandleFunc("POST /api/background", s.uploadBackground)
+	mux.HandleFunc("DELETE /api/background", s.deleteBackground)
+	mux.HandleFunc("GET /backgrounds/{name}", s.background)
 	mux.HandleFunc("GET /", s.static)
 	return mux
 }
@@ -100,6 +117,92 @@ func (s *Server) icon(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "public, max-age=86400")
 	http.ServeFile(w, r, filepath.Join(s.dataDir, "icons", name))
+}
+
+// uploadBackground accepts a multipart "file" field, validated as a real
+// JPEG or PNG (not just by extension or Content-Type header) before it's
+// written to disk, and records it as the dashboard's background image.
+func (s *Server) uploadBackground(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBody)
+	if err := r.ParseMultipartForm(maxUploadBody); err != nil {
+		writeError(w, http.StatusBadRequest, "upload too large or malformed (10 MB max)")
+		return
+	}
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "no file provided")
+		return
+	}
+	defer file.Close()
+	data, err := io.ReadAll(file)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "could not read the uploaded file")
+		return
+	}
+	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil || (format != "jpeg" && format != "png") {
+		writeError(w, http.StatusBadRequest, "the file must be a JPEG or PNG image")
+		return
+	}
+	if cfg.Width > maxImageDim || cfg.Height > maxImageDim {
+		writeError(w, http.StatusBadRequest, "image is too large (8000px max per side)")
+		return
+	}
+
+	ext := ".jpg"
+	if format == "png" {
+		ext = ".png"
+	}
+	name := fmt.Sprintf("bg-%d%s", time.Now().UnixNano(), ext)
+	dir := filepath.Join(s.dataDir, "backgrounds")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		writeError(w, http.StatusInternalServerError, "could not save the image")
+		return
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), data, 0o640); err != nil {
+		writeError(w, http.StatusInternalServerError, "could not save the image")
+		return
+	}
+
+	c := s.store.Get()
+	old := c.Settings.BackgroundImage
+	c.Settings.BackgroundImage = name
+	if err := s.store.Set(c); err != nil {
+		os.Remove(filepath.Join(dir, name))
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if old != "" && old != name {
+		os.Remove(filepath.Join(dir, old))
+	}
+	writeJSON(w, http.StatusOK, s.store.Get())
+}
+
+func (s *Server) deleteBackground(w http.ResponseWriter, _ *http.Request) {
+	c := s.store.Get()
+	old := c.Settings.BackgroundImage
+	if old == "" {
+		writeJSON(w, http.StatusOK, c)
+		return
+	}
+	c.Settings.BackgroundImage = ""
+	if err := s.store.Set(c); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	os.Remove(filepath.Join(s.dataDir, "backgrounds", old))
+	writeJSON(w, http.StatusOK, s.store.Get())
+}
+
+// background serves the uploaded background image from <data>/backgrounds.
+func (s *Server) background(w http.ResponseWriter, r *http.Request) {
+	name := filepath.Base(r.PathValue("name"))
+	if name == "." || name == "/" || strings.HasPrefix(name, ".") {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	http.ServeFile(w, r, filepath.Join(s.dataDir, "backgrounds", name))
 }
 
 // static serves the interface; unknown paths get index.html.
