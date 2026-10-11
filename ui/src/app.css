@@ -403,6 +403,11 @@ button.tape:hover {
   object-fit: contain;
 }
 
+.icon.inset img {
+  padding: 16%;
+  box-sizing: border-box;
+}
+
 .icon .initials {
   width: 100%;
   height: 100%;
