@@ -32,6 +32,7 @@
   $effect(() => {
     void value
     void theme
+    void cssVar
     tick().then(() => {
       const v = normalize(getComputedStyle(document.documentElement).getPropertyValue(cssVar))
       if (v) fallback = v

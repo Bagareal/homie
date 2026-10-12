@@ -46,9 +46,19 @@ type Settings struct {
 	// HoverColor is a tile's color under the pointer; PanelColor is the
 	// background of panels (Settings sections, dialogs). Both #rrggbb, empty =
 	// theme default.
-	HoverColor  string `json:"hoverColor,omitempty"`
-	PanelColor  string `json:"panelColor,omitempty"`
-	CardOpacity int    `json:"cardOpacity,omitempty"`
+	HoverColor string `json:"hoverColor,omitempty"`
+	PanelColor string `json:"panelColor,omitempty"`
+	// Tile text (normal and under the pointer), border colors, and the glow
+	// shown around a hovered tile. All #rrggbb, empty = theme default.
+	TileTextColor      string `json:"tileTextColor,omitempty"`
+	TileTextHoverColor string `json:"tileTextHoverColor,omitempty"`
+	TileBorderColor    string `json:"tileBorderColor,omitempty"`
+	GroupBorderColor   string `json:"groupBorderColor,omitempty"`
+	GlowColor          string `json:"glowColor,omitempty"`
+	// Border widths in px (0-8); nil = the default of 1.
+	TileBorderWidth  *int `json:"tileBorderWidth,omitempty"`
+	GroupBorderWidth *int `json:"groupBorderWidth,omitempty"`
+	CardOpacity      int  `json:"cardOpacity,omitempty"`
 }
 
 type Item struct {
@@ -142,6 +152,11 @@ func (c Config) Validate() error {
 	default:
 		return fmt.Errorf("invalid layout: %q", c.Settings.Layout)
 	}
+	for name, w := range map[string]*int{"tile": c.Settings.TileBorderWidth, "group": c.Settings.GroupBorderWidth} {
+		if w != nil && (*w < 0 || *w > 8) {
+			return fmt.Errorf("%s border width must be between 0 and 8", name)
+		}
+	}
 	if o := c.Settings.CardOpacity; o < 0 || o > 100 {
 		return errors.New("card opacity must be between 0 and 100")
 	}
@@ -152,12 +167,17 @@ func (c Config) Validate() error {
 		return errors.New("the check interval must be between 10 and 3600 seconds")
 	}
 	for name, v := range map[string]string{
-		"background": c.Settings.BackgroundColor,
-		"tile":       c.Settings.TileColor,
-		"accent":     c.Settings.AccentColor,
-		"card":       c.Settings.CardColor,
-		"hover":      c.Settings.HoverColor,
-		"panel":      c.Settings.PanelColor,
+		"background":      c.Settings.BackgroundColor,
+		"tile":            c.Settings.TileColor,
+		"accent":          c.Settings.AccentColor,
+		"card":            c.Settings.CardColor,
+		"hover":           c.Settings.HoverColor,
+		"panel":           c.Settings.PanelColor,
+		"tile text":       c.Settings.TileTextColor,
+		"tile text hover": c.Settings.TileTextHoverColor,
+		"tile border":     c.Settings.TileBorderColor,
+		"group border":    c.Settings.GroupBorderColor,
+		"glow":            c.Settings.GlowColor,
 	} {
 		if v != "" && !hexColor.MatchString(v) {
 			return fmt.Errorf("invalid %s color: must be in #rrggbb format", name)

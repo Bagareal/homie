@@ -195,6 +195,18 @@
     </section>
 
     <section>
+      <h2>Tiles and groups</h2>
+      <ColorField label="Tile text" cssVar="--text" theme={s.theme} value={s.tileTextColor} onpreview={(v) => preview('tileTextColor', v)} oncommit={commit} />
+      <ColorField label="Tile text on hover" cssVar="--text" theme={s.theme} value={s.tileTextHoverColor} onpreview={(v) => preview('tileTextHoverColor', v)} oncommit={commit} />
+      <ColorField label="Tile border" cssVar="--line" theme={s.theme} value={s.tileBorderColor} onpreview={(v) => preview('tileBorderColor', v)} oncommit={commit} />
+      <ColorField label="Group border" cssVar={s.layout === 'grid' ? '--line' : '--accent'} theme={s.theme} value={s.groupBorderColor} onpreview={(v) => preview('groupBorderColor', v)} oncommit={commit} />
+      <ColorField label="Hover glow" cssVar="--text" theme={s.theme} value={s.glowColor} onpreview={(v) => preview('glowColor', v)} oncommit={commit} />
+      <Slider label="Tile border width" unit="px" min={0} max={8} value={s.tileBorderWidth ?? 1} oninput={(v) => preview('tileBorderWidth', v)} oncommit={commit} />
+      <Slider label="Group border width" unit="px" min={0} max={8} value={s.groupBorderWidth ?? 1} oninput={(v) => preview('groupBorderWidth', v)} oncommit={commit} />
+      <p class="hint">The group border is the card outline in the grid layout and the line under each group in the list layout. A width of 0 hides the border. Without a custom glow color, the glow is a soft shade of the text color.</p>
+    </section>
+
+    <section>
       <h2>Background image</h2>
       <div class="row">
         <button type="button" onclick={() => bgInput?.click()}>{s.backgroundImage ? 'Replace background image' : 'Upload background image'}</button>

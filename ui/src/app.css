@@ -14,6 +14,7 @@
   --down: #cf433b;
   --unknown: #8a96a3;
   --focus: #2f6fb3;
+  --glow-shadow: color-mix(in srgb, var(--text) 18%, transparent);
 
   --font: 'Barlow Semi Condensed', 'Arial Narrow', system-ui, sans-serif;
 
@@ -235,7 +236,7 @@ select {
   width: var(--row-width);
   max-width: 100%;
   padding-bottom: 22px;
-  border-bottom: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-bottom: var(--group-border-w, 1px) solid var(--group-border, color-mix(in srgb, var(--accent) 45%, transparent));
 }
 
 .shelf:last-of-type {
@@ -333,7 +334,7 @@ button.tape:hover {
   width: calc(var(--row-width) + 2 * var(--card-pad) + 2px);
   padding: var(--card-pad);
   background: color-mix(in srgb, var(--card-color, var(--shelf)) calc(var(--card-opacity, 40) * 1%), transparent);
-  border: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  border: var(--group-border-w, 1px) solid var(--group-border, color-mix(in srgb, var(--line) 60%, transparent));
   border-radius: 12px;
 }
 
@@ -383,9 +384,9 @@ button.tape:hover {
   overflow: hidden;
   padding: var(--tile-pad);
   background: var(--tile);
-  border: 1px solid var(--line);
+  border: var(--tile-border-w, 1px) solid var(--tile-border, var(--line));
   border-radius: 10px;
-  color: inherit;
+  color: var(--tile-text, inherit);
   text-decoration: none;
   text-align: center;
   font: inherit;
@@ -394,7 +395,8 @@ button.tape:hover {
 
 .tile:hover {
   background: var(--tile-hover);
-  box-shadow: 0 6px 14px color-mix(in srgb, var(--text) 18%, transparent);
+  box-shadow: 0 6px 14px var(--glow-shadow);
+  color: var(--tile-text-hover, var(--tile-text, inherit));
   transform: translateY(-2px);
 }
 

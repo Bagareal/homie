@@ -6,6 +6,7 @@
     value,
     min = 1,
     max = 100,
+    unit = '%',
     oninput,
     oncommit,
   }: {
@@ -13,6 +14,7 @@
     value: number
     min?: number
     max?: number
+    unit?: string
     // Called continuously while dragging (live preview) ...
     oninput: (v: number) => void
     // ... and once when the value is final (release, or Enter after typing).
@@ -70,7 +72,7 @@
       type="number"
       {min}
       {max}
-      aria-label="{label} (percent)"
+      aria-label="{label} ({unit})"
       onkeydown={(e) => {
         if (e.key === 'Enter') finishEdit(true)
         else if (e.key === 'Escape') finishEdit(false)
@@ -84,7 +86,7 @@
       tabindex="0"
       title="Double-click to type a value"
       ondblclick={startEdit}
-      onkeydown={(e) => (e.key === 'Enter' || e.key === 'F2') && startEdit()}>{live}%</span
+      onkeydown={(e) => (e.key === 'Enter' || e.key === 'F2') && startEdit()}>{live}{unit}</span
     >
   {/if}
 </div>

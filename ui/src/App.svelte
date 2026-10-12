@@ -28,6 +28,8 @@
     root.dataset.density = cfg.settings.density
     root.dataset.layout = cfg.settings.layout ?? 'list'
     root.style.setProperty('--bar-opacity', String(cfg.settings.barOpacity ?? 100))
+    root.style.setProperty('--tile-border-w', `${cfg.settings.tileBorderWidth ?? 1}px`)
+    root.style.setProperty('--group-border-w', `${cfg.settings.groupBorderWidth ?? 1}px`)
     root.style.setProperty('--card-opacity', String(cfg.settings.cardOpacity ?? 40))
     document.title = cfg.title || 'Homie'
 
@@ -38,6 +40,11 @@
       ['--card-color', cfg.settings.cardColor],
       ['--tile-hover', cfg.settings.hoverColor],
       ['--shelf', cfg.settings.panelColor],
+      ['--tile-text', cfg.settings.tileTextColor],
+      ['--tile-text-hover', cfg.settings.tileTextHoverColor],
+      ['--tile-border', cfg.settings.tileBorderColor],
+      ['--group-border', cfg.settings.groupBorderColor],
+      ['--glow-shadow', cfg.settings.glowColor && `color-mix(in srgb, ${cfg.settings.glowColor} 55%, transparent)`],
     ]
     for (const [name, value] of vars) {
       if (value) root.style.setProperty(name, value)

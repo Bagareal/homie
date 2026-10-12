@@ -32,6 +32,13 @@ export interface Settings {
   cardColor?: string
   hoverColor?: string
   panelColor?: string
+  tileTextColor?: string
+  tileTextHoverColor?: string
+  tileBorderColor?: string
+  groupBorderColor?: string
+  glowColor?: string
+  tileBorderWidth?: number
+  groupBorderWidth?: number
   cardOpacity: number
 }
 
