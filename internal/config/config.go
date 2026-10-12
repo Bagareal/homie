@@ -2,6 +2,8 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -94,17 +96,10 @@ type Widget struct {
 	HasPassword bool `json:"hasPassword,omitempty"`
 	// ClearPassword is input-only: it asks Set to forget the stored password.
 	ClearPassword bool `json:"clearPassword,omitempty"`
-	// Metrics are the values to show, in display order (see glances.Metrics).
-	Metrics []string `json:"metrics"`
-	// Mounts and Interfaces narrow the disks and network cards shown; empty = all.
-	Mounts     []string `json:"mounts,omitempty"`
-	Interfaces []string `json:"interfaces,omitempty"`
-	// Sensor is the temperature sensor to show, by label; empty = the CPU package.
-	Sensor string `json:"sensor,omitempty"`
+	// Rows are the values shown, top to bottom.
+	Rows []Row `json:"rows"`
 	// Refresh is how often the data is re-read, in seconds (2-300).
 	Refresh int `json:"refresh"`
-	// Placement is "top" (above the groups) or "bottom" (below them).
-	Placement string `json:"placement"`
 	// Width in px (120-1200); Height in px (0 = fit the content, up to 1000).
 	Width  int `json:"width"`
 	Height int `json:"height"`
@@ -116,18 +111,48 @@ type Widget struct {
 	// Opacity (1-100) of the background; BorderWidth in px (0-8, nil = 1).
 	Opacity     int  `json:"opacity"`
 	BorderWidth *int `json:"borderWidth,omitempty"`
+
+	// Read only to upgrade widgets saved by v1.10.x (see migrateWidget); they
+	// are emptied on load and never written again.
+	LegacyMetrics    []string `json:"metrics,omitempty"`
+	LegacyMounts     []string `json:"mounts,omitempty"`
+	LegacyInterfaces []string `json:"interfaces,omitempty"`
+	LegacySensor     string   `json:"sensor,omitempty"`
+	LegacyPlacement  string   `json:"placement,omitempty"`
 }
 
-const maxWidgets = 20
+// Row is one line of a widget.
+type Row struct {
+	ID string `json:"id"`
+	// Type is one of RowTypes.
+	Type string `json:"type"`
+	// Key picks what the row is about: a mount point (disk), a sensor label
+	// (temp) or an interface name (network). Empty = all disks, the CPU
+	// package sensor, or the sum of the physical network cards.
+	Key string `json:"key,omitempty"`
+	// Name replaces the default label.
+	Name string `json:"name,omitempty"`
+	// Load and Temp, for a cpu row: show the usage and/or a temperature next
+	// to each other. The bar follows the load, or the temperature when alone.
+	Load bool `json:"load,omitempty"`
+	Temp bool `json:"temp,omitempty"`
+}
 
-// WidgetMetrics lists the values a widget can show.
-var WidgetMetrics = []string{"cpu", "mem", "swap", "load", "uptime", "temp", "disks", "network"}
+const (
+	maxWidgets    = 20
+	maxWidgetRows = 30
+)
+
+// RowTypes lists the kinds of row a widget can have.
+var RowTypes = []string{"cpu", "mem", "swap", "load", "uptime", "temp", "disk", "network"}
 
 type Config struct {
 	Title    string   `json:"title"`
 	Settings Settings `json:"settings"`
 	Groups   []Group  `json:"groups"`
 	Widgets  []Widget `json:"widgets"`
+	// Order is the sequence of groups and widgets on the dashboard, by id.
+	Order []string `json:"order"`
 }
 
 // Redacted returns a copy that is safe to send to the browser: widget
@@ -158,6 +183,7 @@ func Default() Config {
 		},
 		Groups:  []Group{},
 		Widgets: []Widget{},
+		Order:   []string{},
 	}
 }
 
@@ -203,20 +229,104 @@ func (c *Config) normalize() {
 		if w.Refresh == 0 {
 			w.Refresh = 5
 		}
-		if w.Placement == "" {
-			w.Placement = "top"
-		}
 		if w.Width == 0 {
 			w.Width = 300
 		}
 		if w.Opacity == 0 {
 			w.Opacity = 100
 		}
-		if w.Metrics == nil {
-			w.Metrics = []string{}
-		}
 		w.HasPassword = false
+		migrateWidget(w)
+		if w.Rows == nil {
+			w.Rows = []Row{}
+		}
+		for j := range w.Rows {
+			if w.Rows[j].ID == "" {
+				w.Rows[j].ID = newID()
+			}
+		}
 	}
+	c.normalizeOrder()
+}
+
+// normalizeOrder makes Order list every group and widget exactly once. A
+// config without one (saved before widgets could sit anywhere) gets the old
+// arrangement: top widgets, the groups, bottom widgets.
+func (c *Config) normalizeOrder() {
+	var groups, widgets, top, bottom []string
+	for _, g := range c.Groups {
+		groups = append(groups, g.ID)
+	}
+	for _, w := range c.Widgets {
+		widgets = append(widgets, w.ID)
+		if w.LegacyPlacement == "bottom" {
+			bottom = append(bottom, w.ID)
+		} else {
+			top = append(top, w.ID)
+		}
+	}
+	var base []string
+	if len(c.Order) == 0 {
+		base = append(append(top, groups...), bottom...)
+	} else {
+		base = append(append(append([]string(nil), c.Order...), groups...), widgets...)
+	}
+	known := map[string]bool{}
+	for _, id := range groups {
+		known[id] = true
+	}
+	for _, id := range widgets {
+		known[id] = true
+	}
+	c.Order = []string{}
+	placed := map[string]bool{}
+	for _, id := range base {
+		if known[id] && !placed[id] {
+			placed[id] = true
+			c.Order = append(c.Order, id)
+		}
+	}
+	for i := range c.Widgets {
+		c.Widgets[i].LegacyPlacement = ""
+	}
+}
+
+// migrateWidget turns the metric list of a v1.10.x widget into rows, in the
+// same order, and forgets the old fields.
+func migrateWidget(w *Widget) {
+	if len(w.Rows) == 0 {
+		for _, m := range w.LegacyMetrics {
+			switch m {
+			case "cpu":
+				w.Rows = append(w.Rows, Row{Type: "cpu", Load: true})
+			case "temp":
+				w.Rows = append(w.Rows, Row{Type: "temp", Key: w.LegacySensor})
+			case "disks":
+				for _, mount := range w.LegacyMounts {
+					w.Rows = append(w.Rows, Row{Type: "disk", Key: mount})
+				}
+				if len(w.LegacyMounts) == 0 {
+					w.Rows = append(w.Rows, Row{Type: "disk"})
+				}
+			case "network":
+				for _, name := range w.LegacyInterfaces {
+					w.Rows = append(w.Rows, Row{Type: "network", Key: name})
+				}
+				if len(w.LegacyInterfaces) == 0 {
+					w.Rows = append(w.Rows, Row{Type: "network"})
+				}
+			default:
+				w.Rows = append(w.Rows, Row{Type: m})
+			}
+		}
+	}
+	w.LegacyMetrics, w.LegacyMounts, w.LegacyInterfaces, w.LegacySensor = nil, nil, nil, ""
+}
+
+func newID() string {
+	b := make([]byte, 6)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 func (c Config) Validate() error {
@@ -327,34 +437,11 @@ func (c Config) validateWidgets(seen map[string]bool) error {
 		if len(w.Username) > 100 || len(w.Password) > 200 {
 			return fmt.Errorf("username or password of widget %q is too long", w.Name)
 		}
-		if len(w.Metrics) > len(WidgetMetrics) {
-			return fmt.Errorf("widget %q lists too many metrics", w.Name)
-		}
-		picked := map[string]bool{}
-		for _, m := range w.Metrics {
-			if !slices.Contains(WidgetMetrics, m) || picked[m] {
-				return fmt.Errorf("widget %q has an unknown or repeated metric: %q", w.Name, m)
-			}
-			picked[m] = true
-		}
-		for _, list := range [][]string{w.Mounts, w.Interfaces} {
-			if len(list) > 20 {
-				return fmt.Errorf("widget %q has too many disk or network filters", w.Name)
-			}
-			for _, s := range list {
-				if s == "" || len(s) > 200 {
-					return fmt.Errorf("widget %q has an invalid disk or network filter", w.Name)
-				}
-			}
-		}
-		if len(w.Sensor) > 100 {
-			return fmt.Errorf("widget %q: the sensor name is too long", w.Name)
+		if err := validateRows(w); err != nil {
+			return err
 		}
 		if w.Refresh < 2 || w.Refresh > 300 {
 			return fmt.Errorf("widget %q: the refresh interval must be between 2 and 300 seconds", w.Name)
-		}
-		if w.Placement != "top" && w.Placement != "bottom" {
-			return fmt.Errorf("invalid placement for widget %q: %q", w.Name, w.Placement)
 		}
 		if w.Width < 120 || w.Width > 1200 {
 			return fmt.Errorf("widget %q: the width must be between 120 and 1200 px", w.Name)
@@ -372,6 +459,29 @@ func (c Config) validateWidgets(seen map[string]bool) error {
 			if v != "" && !hexColor.MatchString(v) {
 				return fmt.Errorf("widget %q: invalid %s color, must be in #rrggbb or #rrggbbaa format", w.Name, name)
 			}
+		}
+	}
+	return nil
+}
+
+func validateRows(w Widget) error {
+	if len(w.Rows) > maxWidgetRows {
+		return fmt.Errorf("widget %q has too many rows (%d max)", w.Name, maxWidgetRows)
+	}
+	ids := map[string]bool{}
+	for _, r := range w.Rows {
+		if r.ID == "" || len(r.ID) > 40 || ids[r.ID] {
+			return fmt.Errorf("widget %q has a row with a missing or duplicate id", w.Name)
+		}
+		ids[r.ID] = true
+		if !slices.Contains(RowTypes, r.Type) {
+			return fmt.Errorf("widget %q has a row of unknown type %q", w.Name, r.Type)
+		}
+		if len(r.Key) > 200 || len(r.Name) > 60 {
+			return fmt.Errorf("widget %q has a row whose name or key is too long", w.Name)
+		}
+		if r.Type == "cpu" && !r.Load && !r.Temp {
+			return fmt.Errorf("widget %q: a CPU row must show the load, the temperature, or both", w.Name)
 		}
 	}
 	return nil

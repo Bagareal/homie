@@ -1,4 +1,4 @@
-import type { Config, Status, WidgetData } from './types'
+import type { Config, HostData, Status, WidgetData } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response
@@ -27,7 +27,7 @@ export const getStatus = () => request<Record<string, Status>>('api/status')
 export const getWidgets = () => request<Record<string, WidgetData>>('api/widgets')
 
 export const testWidget = (w: { id?: string; url: string; username: string; password: string }) =>
-  request<{ ok: boolean; version?: string; error?: string }>('api/widgets/test', {
+  request<{ ok: boolean; version?: string; error?: string; data?: HostData }>('api/widgets/test', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(w),

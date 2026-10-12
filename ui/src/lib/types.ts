@@ -42,8 +42,19 @@ export interface Settings {
   cardOpacity: number
 }
 
-export type WidgetMetric = 'cpu' | 'mem' | 'swap' | 'load' | 'uptime' | 'temp' | 'disks' | 'network'
-export type Placement = 'top' | 'bottom'
+export type RowType = 'cpu' | 'mem' | 'swap' | 'load' | 'uptime' | 'temp' | 'disk' | 'network'
+
+// One line of a widget. `key` picks a disk (mount point), sensor (label) or
+// network card (name); empty = all disks, the CPU sensor, the physical cards.
+export interface Row {
+  id: string
+  type: RowType
+  key?: string
+  name?: string
+  // cpu rows: the load and/or a temperature, side by side.
+  load?: boolean
+  temp?: boolean
+}
 
 export interface Widget {
   id: string
@@ -55,12 +66,8 @@ export interface Widget {
   password?: string
   hasPassword?: boolean
   clearPassword?: boolean
-  metrics: WidgetMetric[]
-  mounts?: string[]
-  interfaces?: string[]
-  sensor?: string
+  rows: Row[]
   refresh: number
-  placement: Placement
   width: number
   height: number
   color?: string
@@ -76,6 +83,8 @@ export interface Config {
   settings: Settings
   groups: Group[]
   widgets: Widget[]
+  // Ids of the groups and widgets, in the order they appear.
+  order: string[]
 }
 
 export interface Usage {
@@ -84,21 +93,24 @@ export interface Usage {
   total: number
 }
 
+export interface HostData {
+  cpu?: number
+  mem?: Usage
+  swap?: Usage
+  load?: { min1: number; min5: number; min15: number; cores: number }
+  uptime?: string
+  // The CPU temperature picked automatically, and every temperature sensor.
+  temp?: { label: string; value: number }
+  sensors?: { label: string; value: number }[]
+  disks?: (Usage & { mount: string })[]
+  network?: { name: string; rx: number; tx: number; virtual?: boolean; bridge?: boolean }[]
+}
+
 export interface WidgetData {
   online: boolean
   error?: string
   updatedAt: string
-  failed?: WidgetMetric[]
-  data: {
-    cpu?: number
-    mem?: Usage
-    swap?: Usage
-    load?: { min1: number; min5: number; min15: number; cores: number }
-    uptime?: string
-    temp?: { label: string; value: number }
-    disks?: (Usage & { mount: string })[]
-    network?: { rx: number; tx: number }
-  }
+  data: HostData
 }
 
 export interface Status {

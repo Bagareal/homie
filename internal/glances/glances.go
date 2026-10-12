@@ -12,7 +12,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -22,24 +21,28 @@ import (
 // few kilobytes.
 const maxBody = 2 << 20
 
-// maxDisks keeps a host with dozens of ZFS datasets from flooding a widget.
-const maxDisks = 16
+// maxDisks bounds what is read from a host with a great many ZFS datasets.
+const maxDisks = 64
 
-// virtualPrefixes are interface names that carry traffic already counted on a
-// physical card (bridges, VM taps, container links), so adding them up would
-// count the same bytes several times. Used only when no filter is given.
-var virtualPrefixes = []string{"lo", "veth", "tap", "fwbr", "fwpr", "fwln", "docker", "br-", "virbr", "vmbr"}
+// Interfaces whose traffic is already counted on another one, so adding them
+// up would count the same bytes several times: VM taps and container links
+// (virtual), and bridges, which carry what their physical card carries. A
+// total uses the physical cards, or the bridges if Glances shows no card
+// (on Proxmox it can list only vmbr0).
+var (
+	virtualPrefixes = []string{"lo", "veth", "tap", "fwbr", "fwpr", "fwln", "docker"}
+	bridgePrefixes  = []string{"br-", "virbr", "vmbr"}
+)
 
-// Target is one Glances server and what to read from it.
+// Metrics are the groups of values that can be read from a server.
+var Metrics = []string{"cpu", "mem", "swap", "load", "uptime", "sensors", "disks", "network"}
+
+// Target is one Glances server and which of the Metrics to read from it.
 type Target struct {
-	URL        string
-	Username   string
-	Password   string
-	Metrics    []string
-	Mounts     []string
-	Interfaces []string
-	// Sensor is the label of the temperature sensor to show; empty = automatic.
-	Sensor string
+	URL      string
+	Username string
+	Password string
+	Metrics  []string
 }
 
 type Usage struct {
@@ -65,21 +68,28 @@ type Disk struct {
 	Usage
 }
 
-type Net struct {
-	Rx float64 `json:"rx"` // bytes per second received
-	Tx float64 `json:"tx"` // bytes per second sent
+// Iface is one network interface with its current traffic.
+type Iface struct {
+	Name    string  `json:"name"`
+	Rx      float64 `json:"rx"` // bytes per second received
+	Tx      float64 `json:"tx"` // bytes per second sent
+	Virtual bool    `json:"virtual,omitempty"`
+	Bridge  bool    `json:"bridge,omitempty"`
 }
 
-// Data holds the metrics that were asked for and could be read.
+// Data holds the metrics that were asked for and could be read. A widget row
+// picks what it needs from it.
 type Data struct {
-	CPU     *float64 `json:"cpu,omitempty"`
-	Mem     *Usage   `json:"mem,omitempty"`
-	Swap    *Usage   `json:"swap,omitempty"`
-	Load    *Load    `json:"load,omitempty"`
-	Uptime  *string  `json:"uptime,omitempty"`
-	Temp    *Temp    `json:"temp,omitempty"`
-	Disks   []Disk   `json:"disks,omitempty"`
-	Network *Net     `json:"network,omitempty"`
+	CPU    *float64 `json:"cpu,omitempty"`
+	Mem    *Usage   `json:"mem,omitempty"`
+	Swap   *Usage   `json:"swap,omitempty"`
+	Load   *Load    `json:"load,omitempty"`
+	Uptime *string  `json:"uptime,omitempty"`
+	// Temp is the CPU temperature chosen automatically; Sensors lists all.
+	Temp    *Temp   `json:"temp,omitempty"`
+	Sensors []Temp  `json:"sensors,omitempty"`
+	Disks   []Disk  `json:"disks,omitempty"`
+	Network []Iface `json:"network,omitempty"`
 }
 
 // Result is what the dashboard receives for one widget.
@@ -231,24 +241,25 @@ func (c *Client) read(ctx context.Context, t Target, prefix, metric string, d *D
 		mu.Lock()
 		d.Uptime = &s
 		mu.Unlock()
-	case "temp":
+	case "sensors":
 		var v []sensor
 		if err := c.get(ctx, t, prefix, "sensors", &v); err != nil {
 			return err
 		}
-		temp := pickTemp(v, t.Sensor)
-		if temp == nil {
+		temps := temperatures(v)
+		if len(temps) == 0 {
 			return errors.New("no temperature sensors")
 		}
 		mu.Lock()
-		d.Temp = temp
+		d.Sensors = temps
+		d.Temp = pickTemp(temps)
 		mu.Unlock()
 	case "disks":
 		var v []fsEntry
 		if err := c.get(ctx, t, prefix, "fs", &v); err != nil {
 			return err
 		}
-		disks := pickDisks(v, t.Mounts)
+		disks := disksOf(v)
 		mu.Lock()
 		d.Disks = disks
 		mu.Unlock()
@@ -257,9 +268,9 @@ func (c *Client) read(ctx context.Context, t Target, prefix, metric string, d *D
 		if err := c.get(ctx, t, prefix, "network", &v); err != nil {
 			return err
 		}
-		n := sumNetwork(v, t.Interfaces)
+		ifaces := ifacesOf(v)
 		mu.Lock()
-		d.Network = &n
+		d.Network = ifaces
 		mu.Unlock()
 	default:
 		return fmt.Errorf("unknown metric %q", metric)
@@ -278,11 +289,9 @@ type sensor struct {
 // preference (Intel package, AMD control/die temperature, generic names).
 var cpuLabels = []string{"package id 0", "tctl", "tdie", "cpu"}
 
-// pickTemp chooses the temperature to show: the sensor named by want if there
-// is one, otherwise the CPU package sensor, otherwise the warmest sensor.
-// Taking the maximum alone is wrong on some machines: a Dell's dell_smm
-// reports a bogus 126 °C next to a 42 °C CPU.
-func pickTemp(sensors []sensor, want string) *Temp {
+// temperatures keeps the sensors that measure a temperature (not fans or
+// batteries).
+func temperatures(sensors []sensor) []Temp {
 	var temps []Temp
 	for _, s := range sensors {
 		v, ok := s.Value.(float64)
@@ -290,18 +299,17 @@ func pickTemp(sensors []sensor, want string) *Temp {
 			temps = append(temps, Temp{Label: s.Label, Value: v})
 		}
 	}
-	if want != "" {
-		for _, t := range temps {
-			if strings.EqualFold(t.Label, want) {
-				return &t
-			}
-		}
-		return nil
-	}
+	return temps
+}
+
+// pickTemp chooses the CPU temperature: the package sensor if there is one,
+// otherwise the warmest sensor. Taking the maximum alone is wrong on some
+// machines: a Dell's dell_smm reports a bogus 126 °C next to a 42 °C CPU.
+func pickTemp(temps []Temp) *Temp {
 	for _, label := range cpuLabels {
-		for _, t := range temps {
+		for i, t := range temps {
 			if strings.EqualFold(t.Label, label) {
-				return &t
+				return &temps[i]
 			}
 		}
 	}
@@ -321,12 +329,9 @@ type fsEntry struct {
 	Percent float64 `json:"percent"`
 }
 
-func pickDisks(entries []fsEntry, mounts []string) []Disk {
+func disksOf(entries []fsEntry) []Disk {
 	var out []Disk
 	for _, e := range entries {
-		if len(mounts) > 0 && !slices.Contains(mounts, e.Mount) {
-			continue
-		}
 		out = append(out, Disk{Mount: e.Mount, Usage: Usage{Percent: e.Percent, Used: e.Used, Total: e.Size}})
 		if len(out) == maxDisks {
 			break
@@ -354,26 +359,18 @@ func (n netEntry) rates() (rx, tx float64) {
 	return 0, 0
 }
 
-func sumNetwork(entries []netEntry, only []string) Net {
-	var out Net
+func ifacesOf(entries []netEntry) []Iface {
+	var out []Iface
 	for _, e := range entries {
-		if len(only) > 0 {
-			if !slices.Contains(only, e.Name) {
-				continue
-			}
-		} else if isVirtual(e.Name) {
-			continue
-		}
 		rx, tx := e.rates()
-		out.Rx += rx
-		out.Tx += tx
+		out = append(out, Iface{Name: e.Name, Rx: rx, Tx: tx, Virtual: hasPrefix(e.Name, virtualPrefixes), Bridge: hasPrefix(e.Name, bridgePrefixes)})
 	}
 	return out
 }
 
-func isVirtual(name string) bool {
+func hasPrefix(name string, prefixes []string) bool {
 	n := strings.ToLower(name)
-	for _, p := range virtualPrefixes {
+	for _, p := range prefixes {
 		if strings.HasPrefix(n, p) {
 			return true
 		}

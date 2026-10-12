@@ -258,12 +258,9 @@ select {
   margin-bottom: 14px;
 }
 
-:root[data-layout='grid'] .widgets {
-  /* Dashboard.svelte narrows this to the width of the group cards' rows, so
-     the widgets line up with the cards' left edge. */
-  flex: 0 0 auto;
-  width: 100%;
-  margin-bottom: 0;
+/* In the grid layout a widget is one more item in the flow of cards. */
+:root[data-layout='grid'] .shelves > .widget {
+  align-self: flex-start;
 }
 
 .add-row {
@@ -358,9 +355,12 @@ button.tape:hover {
   max-width: none;
   flex-direction: row;
   flex-wrap: wrap;
-  justify-content: center;
+  /* Left-aligned inside a block Dashboard.svelte sizes to whole columns of
+     cards and centers, so a lone widget or a short last row stays at the left. */
+  justify-content: flex-start;
   align-items: stretch;
   gap: 20px;
+  margin-inline: auto;
 }
 
 :root[data-layout='grid'] .shelf,

@@ -56,7 +56,9 @@ The backend periodically runs an active check on each service (interval set in S
 
 ## Widgets
 
-A widget is a standalone block, separate from the groups, that shows live data from a host running [Glances](https://nicolargo.github.io/glances/). Use **Edit → Add widget**, give it a name and choose what to show: CPU, memory, swap, load average, uptime, temperature (the hottest sensor), disks and network traffic. You choose the width and height, whether it sits above or below the groups, and its colors (background with opacity, text, border, bars). Widgets can be dragged to reorder them while editing.
+A widget is a standalone block, separate from the groups, that shows live data from a host running [Glances](https://nicolargo.github.io/glances/). Use **Edit → Add widget**, give it a name and press "Test connection": Homie then lists the disks, temperature sensors and network cards the host reports, so you pick them from a menu instead of typing them. Each value is a row you can rename ("HDD esterno" instead of `/mnt/hdd-esterno`), reorder by dragging, or remove. The CPU row can show the load, a temperature, or both side by side (the bar follows the load, or the temperature when it is alone). Other rows: memory, swap, load average, uptime, one temperature sensor, one disk (or all), network traffic.
+
+You choose the width and height and the colors (background with opacity, text, border, bars). While editing, drag a widget wherever you like, even between two groups: groups and widgets share one order. In the grid layout a widget flows like a card.
 
 On the host, start Glances in web server mode (it listens on port 61208):
 

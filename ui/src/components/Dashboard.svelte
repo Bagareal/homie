@@ -3,7 +3,7 @@
   import { app } from '../lib/state.svelte'
   import { barHeight } from '../lib/barHeight'
   import { clearDraft, loadDraft, type ItemFields } from '../lib/draft'
-  import type { Item, Placement } from '../lib/types'
+  import type { Item, Widget as WidgetT } from '../lib/types'
   import Shelf from './Shelf.svelte'
   import Widget from './Widget.svelte'
   import WidgetDialog from './WidgetDialog.svelte'
@@ -52,6 +52,29 @@
       .filter((v) => !q || v.items.length > 0),
   )
 
+  // Groups and widgets in the order the user arranged them. In the list layout
+  // neighbouring widgets share a row; in the grid they flow like the cards.
+  type Block = { kind: 'group'; v: (typeof visible)[number] } | { kind: 'widget'; w: WidgetT } | { kind: 'strip'; list: WidgetT[] }
+  const blocks = $derived.by(() => {
+    const byId = new Map(visible.map((v) => [v.group.id, v]))
+    const out: Block[] = []
+    for (const id of app.blockOrder()) {
+      const v = byId.get(id)
+      if (v) {
+        out.push({ kind: 'group', v })
+        continue
+      }
+      const w = q ? undefined : cfg.widgets.find((x) => x.id === id)
+      if (!w) continue
+      const last = out[out.length - 1]
+      if (cfg.settings.layout === 'grid') out.push({ kind: 'widget', w })
+      else if (last?.kind === 'strip') last.list.push(w)
+      else out.push({ kind: 'strip', list: [w] })
+    }
+    return out
+  })
+  const blockKey = (b: Block) => (b.kind === 'group' ? `g${b.v.group.id}` : b.kind === 'widget' ? `w${b.w.id}` : `s${b.list[0].id}`)
+
   const summary = $derived.by(() => {
     let up = 0
     let down = 0
@@ -67,25 +90,32 @@
   })
   const anyDown = $derived(summary.includes('unreachable'))
 
-  // In the grid layout the widgets take the width of the cards' rows (as many
-  // cards as fit side by side), so they start at the cards' left edge instead
-  // of floating in the middle of the page.
+  // In the grid layout everything is left-aligned inside a block as wide as
+  // the cards that fit side by side, and that block is centered. Without it a
+  // lone widget (or a short last row) would float in the middle of the page.
   $effect(() => {
     void [cfg.settings.layout, cfg.groups.length, cfg.widgets.length, app.query, app.editing]
     const el = main
-    if (!el) return
+    const host = el?.parentElement
+    if (!el || !host) return
     const fit = () => {
-      const strips = el.querySelectorAll<HTMLElement>('.widgets')
-      const shelf = el.querySelector<HTMLElement>('.shelf')
-      if (cfg.settings.layout !== 'grid' || !shelf) return strips.forEach((s) => s.style.removeProperty('width'))
+      if (cfg.settings.layout !== 'grid') return el.style.removeProperty('width')
       const cs = getComputedStyle(el)
       const gap = parseFloat(cs.columnGap) || 20
-      const avail = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
-      const cols = Math.max(1, Math.min(visible.length, Math.floor((avail + gap) / (shelf.offsetWidth + gap))))
-      strips.forEach((s) => (s.style.width = `${cols * shelf.offsetWidth + (cols - 1) * gap}px`))
+      const pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight)
+      const shelf = el.querySelector<HTMLElement>('.shelf')
+      const root = getComputedStyle(document.documentElement)
+      const tile = parseFloat(root.getPropertyValue('--tile-min')) || 120
+      const tileGap = parseFloat(root.getPropertyValue('--gap')) || 16
+      // Without a group on screen, the size a card would have (4 tiles + padding + border).
+      const card = shelf?.offsetWidth ?? 4 * tile + 3 * tileGap + 34
+      const fits = Math.max(1, Math.floor((host.clientWidth - pad + gap) / (card + gap)))
+      const wanted = Math.max(1, visible.length + (cfg.widgets.length > 0 && !app.query ? 1 : 0))
+      const cols = Math.min(fits, wanted)
+      el.style.width = `${cols * card + (cols - 1) * gap + pad}px`
     }
     const ro = new ResizeObserver(fit)
-    ro.observe(el)
+    ro.observe(host)
     tick().then(fit)
     return () => ro.disconnect()
   })
@@ -144,20 +174,9 @@
   <p class="edit-hint">Drag tiles, group labels and widgets to reorder them. Click an item to edit it.</p>
 {/if}
 
-{#snippet widgets(placement: Placement)}
-  {@const list = cfg.widgets.filter((w) => w.placement === placement)}
-  {#if list.length > 0 && !q}
-    <div class="widgets">
-      {#each list as w (w.id)}
-        <Widget widget={w} data={app.widgetData[w.id]} onedit={() => (widgetEdit = { id: w.id })} />
-      {/each}
-    </div>
-  {/if}
-{/snippet}
 
 <main class="shelves" class:editing={app.editing} bind:this={main}>
-  {@render widgets('top')}
-  {#if cfg.groups.length === 0}
+  {#if cfg.groups.length === 0 && cfg.widgets.length === 0}
     <div class="empty">
       <p>The dashboard is empty. Create a group, then add your services to it.</p>
       <button
@@ -169,20 +188,29 @@
         }}>Add group</button
       >
     </div>
-  {:else if visible.length === 0}
+  {:else if q && visible.length === 0}
     <p class="empty">No service matches “{app.query}”.</p>
   {:else}
-    {#each visible as v (v.group.id)}
-      <Shelf
-        group={v.group}
-        items={v.items}
-        onEditItem={(item) => (itemEdit = { groupId: v.group.id, item })}
-        onAddItem={() => (itemEdit = { groupId: v.group.id, item: null })}
-        onEditGroup={() => (groupEdit = { id: v.group.id })}
-      />
+    {#each blocks as b (blockKey(b))}
+      {#if b.kind === 'group'}
+        <Shelf
+          group={b.v.group}
+          items={b.v.items}
+          onEditItem={(item) => (itemEdit = { groupId: b.v.group.id, item })}
+          onAddItem={() => (itemEdit = { groupId: b.v.group.id, item: null })}
+          onEditGroup={() => (groupEdit = { id: b.v.group.id })}
+        />
+      {:else if b.kind === 'widget'}
+        <Widget widget={b.w} data={app.widgetData[b.w.id]} onedit={() => (widgetEdit = { id: b.w.id })} />
+      {:else}
+        <div class="widgets">
+          {#each b.list as w (w.id)}
+            <Widget widget={w} data={app.widgetData[w.id]} onedit={() => (widgetEdit = { id: w.id })} />
+          {/each}
+        </div>
+      {/if}
     {/each}
   {/if}
-  {@render widgets('bottom')}
   {#if app.editing}
     <div class="add-row">
       {#if cfg.groups.length > 0}

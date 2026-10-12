@@ -34,8 +34,11 @@
     return !(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)
   }
 
+  // A group is moved next to groups and widgets alike.
+  const isBlock = (d: typeof app.drag) => d?.kind === 'group' || d?.kind === 'widget'
+
   function shelfOver(e: DragEvent) {
-    if (app.drag?.kind !== 'group' || app.drag.id === group.id) return
+    if (!isBlock(app.drag) || app.drag!.id === group.id) return
     e.preventDefault()
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
     // Cards sit side by side in the grid layout, stacked in the list layout.
@@ -44,13 +47,13 @@
   }
   function shelfDrop(e: DragEvent) {
     const d = app.drag
-    if (d?.kind !== 'group') return
+    if (!d || !isBlock(d)) return
     e.preventDefault()
     const after = groupDrop === 'after'
     const valid = groupDrop !== null
     groupDrop = null
     app.drag = null
-    if (valid) app.moveGroup(d.id, group.id, after)
+    if (valid) app.moveBlock(d.id, group.id, after)
   }
 
   // Dropping in the group's empty area: the item goes to the end.

@@ -129,17 +129,32 @@ class AppState {
     if (order(this.config!) !== before) this.save('Order updated')
   }
 
-  moveGroup(groupId: string, targetId: string, after: boolean) {
-    const groups = this.config?.groups
-    if (!groups || groupId === targetId) return
-    const before = order(this.config!)
-    const i = groups.findIndex((g) => g.id === groupId)
+  // Groups and widgets form one sequence. Ids missing from the saved order
+  // (just created) go last; ids that no longer exist are dropped.
+  blockOrder(): string[] {
+    const cfg = this.config
+    if (!cfg) return []
+    const known = new Set([...cfg.groups.map((g) => g.id), ...cfg.widgets.map((w) => w.id)])
+    const out = (cfg.order ?? []).filter((id, i, all) => known.has(id) && all.indexOf(id) === i)
+    for (const id of known) if (!out.includes(id)) out.push(id)
+    return out
+  }
+
+  // Moves a group or widget next to another one.
+  moveBlock(id: string, targetId: string, after: boolean) {
+    const cfg = this.config
+    if (!cfg || id === targetId) return
+    const ids = this.blockOrder()
+    const before = ids.join()
+    const i = ids.indexOf(id)
     if (i < 0) return
-    const [g] = groups.splice(i, 1)
-    let j = groups.findIndex((x) => x.id === targetId)
-    j = j < 0 ? groups.length : j + (after ? 1 : 0)
-    groups.splice(j, 0, g)
-    if (order(this.config!) !== before) this.save('Order updated')
+    ids.splice(i, 1)
+    let j = ids.indexOf(targetId)
+    j = j < 0 ? ids.length : j + (after ? 1 : 0)
+    ids.splice(j, 0, id)
+    if (ids.join() === before) return
+    cfg.order = ids
+    this.save('Order updated')
   }
 
   upsertItem(fromId: string, toId: string, data: Item) {
@@ -184,19 +199,6 @@ class AppState {
     this.save('Widget deleted')
   }
 
-  moveWidget(widgetId: string, targetId: string, after: boolean) {
-    const list = this.config?.widgets
-    if (!list || widgetId === targetId) return
-    const before = list.map((w) => w.id).join()
-    const i = list.findIndex((w) => w.id === widgetId)
-    if (i < 0) return
-    const [w] = list.splice(i, 1)
-    let j = list.findIndex((x) => x.id === targetId)
-    j = j < 0 ? list.length : j + (after ? 1 : 0)
-    list.splice(j, 0, w)
-    if (list.map((x) => x.id).join() !== before) this.save('Order updated')
-  }
-
   upsertGroup(id: string | null, name: string) {
     if (!this.config) return
     const g = id ? this.group(id) : undefined
@@ -218,6 +220,7 @@ class AppState {
 // Older servers and imports may omit the list.
 function withWidgets(cfg: Config): Config {
   cfg.widgets ??= []
+  cfg.order ??= []
   return cfg
 }
 

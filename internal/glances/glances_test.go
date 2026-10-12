@@ -51,7 +51,7 @@ func fakeGlances(t *testing.T, prefix string, data map[string]string, user, pass
 	return srv
 }
 
-var allMetrics = []string{"cpu", "mem", "swap", "load", "uptime", "temp", "disks", "network"}
+var allMetrics = Metrics
 
 func TestFetchReadsEveryMetric(t *testing.T) {
 	srv := fakeGlances(t, "/api/4", v4, "", "")
@@ -78,33 +78,45 @@ func TestFetchReadsEveryMetric(t *testing.T) {
 	if d.Temp == nil || d.Temp.Value != 48 || d.Temp.Label != "Package id 0" {
 		t.Errorf("temp = %+v (want the CPU package, not the hottest sensor)", d.Temp)
 	}
+	if len(d.Sensors) != 2 || d.Sensors[1].Label != "Core 1" {
+		t.Errorf("sensors = %+v (want the two temperatures, no fan or battery)", d.Sensors)
+	}
 	if len(d.Disks) != 2 || d.Disks[1].Mount != "/mnt/data" || d.Disks[1].Percent != 89.1 {
 		t.Errorf("disks = %+v", d.Disks)
 	}
-	// Only the physical card counts: bridge, VM tap and loopback are skipped.
-	if d.Network == nil || d.Network.Rx != 1000 || d.Network.Tx != 200 {
-		t.Errorf("network = %+v", d.Network)
+	if len(d.Network) != 4 {
+		t.Fatalf("network = %+v", d.Network)
+	}
+	virtual := map[string]bool{}
+	for _, n := range d.Network {
+		virtual[n.Name] = n.Virtual
+	}
+	if virtual["eno1"] || virtual["vmbr0"] || !virtual["tap100i0"] || !virtual["lo"] {
+		t.Errorf("virtual flags = %v (VM tap and loopback are virtual, the card and the bridge are not)", virtual)
+	}
+	if !d.Network[1].Bridge || d.Network[0].Bridge {
+		t.Errorf("bridge flags: %+v", d.Network)
+	}
+	if d.Network[0].Rx != 1000 || d.Network[0].Tx != 200 {
+		t.Errorf("eno1 = %+v", d.Network[0])
 	}
 }
 
 func TestPickTemp(t *testing.T) {
 	// Real sensors from a Dell host: dell_smm 6 reads a bogus 126.
-	s := []sensor{
+	temps := temperatures([]sensor{
 		{Label: "Composite", Value: 35.0, Unit: "C", Type: "temperature_core"},
 		{Label: "Package id 0", Value: 42.0, Unit: "C", Type: "temperature_core"},
 		{Label: "dell_smm 6", Value: 126.0, Unit: "C", Type: "temperature_core"},
 		{Label: "dell_smm 0", Value: 1811.0, Unit: "R", Type: "fan_speed"},
+	})
+	if len(temps) != 3 {
+		t.Fatalf("temperatures = %+v, want the fan left out", temps)
 	}
-	if got := pickTemp(s, ""); got == nil || got.Label != "Package id 0" {
+	if got := pickTemp(temps); got == nil || got.Label != "Package id 0" {
 		t.Errorf("auto = %+v", got)
 	}
-	if got := pickTemp(s, "composite"); got == nil || got.Value != 35 {
-		t.Errorf("named = %+v", got)
-	}
-	if got := pickTemp(s, "nope"); got != nil {
-		t.Errorf("unknown name = %+v, want none", got)
-	}
-	if got := pickTemp(s[2:], ""); got == nil || got.Value != 126 {
+	if got := pickTemp(temps[2:]); got == nil || got.Value != 126 {
 		t.Errorf("no CPU sensor: want the warmest, got %+v", got)
 	}
 }
@@ -132,28 +144,14 @@ func TestFetchOnlyAsksForTheChosenMetrics(t *testing.T) {
 	}
 }
 
-func TestFetchFiltersDisksAndInterfaces(t *testing.T) {
-	srv := fakeGlances(t, "/api/4", v4, "", "")
-	r := New().Fetch(context.Background(), Target{
-		URL: srv.URL, Metrics: []string{"disks", "network"},
-		Mounts: []string{"/mnt/data"}, Interfaces: []string{"vmbr0", "tap100i0"},
-	})
-	if len(r.Data.Disks) != 1 || r.Data.Disks[0].Mount != "/mnt/data" {
-		t.Errorf("disks = %+v", r.Data.Disks)
-	}
-	if r.Data.Network.Rx != 1050 || r.Data.Network.Tx != 250 {
-		t.Errorf("network = %+v", r.Data.Network)
-	}
-}
-
 func TestFetchKeepsWorkingWhenOneMetricIsMissing(t *testing.T) {
 	data := map[string]string{"status": v4["status"], "cpu": v4["cpu"]} // no sensors endpoint
 	srv := fakeGlances(t, "/api/4", data, "", "")
-	r := New().Fetch(context.Background(), Target{URL: srv.URL, Metrics: []string{"cpu", "temp"}})
+	r := New().Fetch(context.Background(), Target{URL: srv.URL, Metrics: []string{"cpu", "sensors"}})
 	if !r.Online || r.Data.CPU == nil {
 		t.Fatalf("result = %+v", r)
 	}
-	if len(r.Failed) != 1 || r.Failed[0] != "temp" {
+	if len(r.Failed) != 1 || r.Failed[0] != "sensors" {
 		t.Errorf("failed = %v", r.Failed)
 	}
 }
@@ -169,7 +167,7 @@ func TestFetchFallsBackToTheOlderAPI(t *testing.T) {
 	if !r.Online {
 		t.Fatalf("error = %q", r.Error)
 	}
-	if r.Data.Network.Rx != 2000 || r.Data.Network.Tx != 500 {
+	if len(r.Data.Network) != 1 || r.Data.Network[0].Rx != 2000 || r.Data.Network[0].Tx != 500 {
 		t.Errorf("network = %+v (Glances 3 reports bytes per interval)", r.Data.Network)
 	}
 }

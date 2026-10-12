@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Bagareal/homie/internal/config"
@@ -124,7 +125,7 @@ func putWidget(t *testing.T, s *Server, glancesURL, password string) {
 	cfg := s.store.Get().Redacted()
 	cfg.Widgets = []config.Widget{{
 		ID: "w1", Name: "Proxmox", URL: glancesURL, Username: "glances", Password: password,
-		Metrics: []string{"cpu"}, Refresh: 5, Placement: "top", Width: 300, Opacity: 100,
+		Rows: []config.Row{{ID: "r1", Type: "cpu", Load: true}}, Refresh: 5, Width: 300, Opacity: 100,
 	}}
 	if w := doJSON(t, s.Handler(), "PUT", "/api/config", cfg); w.Code != http.StatusOK {
 		t.Fatalf("put widget: %d %s", w.Code, w.Body.String())
@@ -208,6 +209,9 @@ func TestTestWidgetUsesTheStoredPasswordOnlyForTheSameAddress(t *testing.T) {
 		OK      bool   `json:"ok"`
 		Version string `json:"version"`
 		Error   string `json:"error"`
+		Data    struct {
+			CPU float64 `json:"cpu"`
+		} `json:"data"`
 	}
 	call := func(body map[string]any) reply {
 		w := doJSON(t, h, "POST", "/api/widgets/test", body)
@@ -216,7 +220,7 @@ func TestTestWidgetUsesTheStoredPasswordOnlyForTheSameAddress(t *testing.T) {
 		return r
 	}
 
-	if r := call(map[string]any{"id": "w1", "url": g.URL, "username": "glances"}); !r.OK || r.Version != "4.5.8" {
+	if r := call(map[string]any{"id": "w1", "url": g.URL, "username": "glances"}); !r.OK || r.Version != "4.5.8" || r.Data.CPU != 21.5 {
 		t.Fatalf("saved widget, blank password: %+v", r)
 	}
 	// Pointing the stored credentials at another address must not work.
@@ -229,5 +233,21 @@ func TestTestWidgetUsesTheStoredPasswordOnlyForTheSameAddress(t *testing.T) {
 	}
 	if w := doJSON(t, h, "POST", "/api/widgets/test", map[string]any{"url": "not a url"}); w.Code != http.StatusBadRequest {
 		t.Fatalf("invalid address: got %d", w.Code)
+	}
+}
+
+func TestMetricsOfAsksOnlyForWhatTheRowsNeed(t *testing.T) {
+	got := metricsOf([]config.Row{
+		{Type: "cpu", Temp: true}, // temperature only: no CPU reading needed
+		{Type: "disk", Key: "/"},
+		{Type: "disk"},
+		{Type: "network"},
+	})
+	if want := "sensors,disks,network"; strings.Join(got, ",") != want {
+		t.Errorf("got %v, want %s", got, want)
+	}
+	got = metricsOf([]config.Row{{Type: "cpu", Load: true, Temp: true}, {Type: "uptime"}})
+	if want := "cpu,uptime,sensors"; strings.Join(got, ",") != want {
+		t.Errorf("got %v, want %s", got, want)
 	}
 }

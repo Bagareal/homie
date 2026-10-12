@@ -1,7 +1,7 @@
 <script lang="ts">
   import { app } from '../lib/state.svelte'
   import { bytes, percent, rate } from '../lib/format'
-  import type { Widget, WidgetData, WidgetMetric } from '../lib/types'
+  import type { HostData, RowType, Widget, WidgetData } from '../lib/types'
   import EditIcon from './EditIcon.svelte'
 
   let {
@@ -18,6 +18,7 @@
   } = $props()
 
   let drop = $state<'before' | 'after' | null>(null)
+  let vertical = $state(false)
   const editable = $derived(app.editing && !preview)
 
   const style = $derived(
@@ -34,69 +35,127 @@
       .join(';'),
   )
 
-  const labels: Record<WidgetMetric, string> = {
+  type Line = { key: string; label: string; value: string; pct?: number; hot?: boolean; title?: string }
+
+  const labels: Record<RowType, string> = {
     cpu: 'CPU',
     mem: 'Memory',
     swap: 'Swap',
     load: 'Load',
     uptime: 'Uptime',
     temp: 'Temperature',
-    disks: 'Disks',
+    disk: 'Disk',
     network: 'Network',
   }
 
-  type Row = { key: string; label: string; value: string; pct?: number; title?: string }
+  // A temperature has no natural 100%: the bar fills to 100 °C and warns from 80.
+  const tempLine = (key: string, label: string, t: { label: string; value: number }): Line => ({
+    key,
+    label,
+    value: `${Math.round(t.value)} °C`,
+    pct: t.value,
+    hot: t.value >= 80,
+    title: t.label,
+  })
 
-  // One row per value; the disks metric expands into one row per disk.
-  const rows = $derived.by((): Row[] => {
+  function sensorFor(d: HostData, key: string | undefined) {
+    if (!key) return d.temp
+    return d.sensors?.find((s) => s.label.toLowerCase() === key.toLowerCase())
+  }
+
+  // One or more lines per row (a disk row without a disk expands to all of them).
+  const lines = $derived.by((): Line[] => {
     if (!data?.online) return []
     const d = data.data
-    const out: Row[] = []
-    for (const m of widget.metrics) {
-      const missing = (): Row => ({ key: m, label: labels[m], value: 'n/a' })
-      switch (m) {
-        case 'cpu':
-          out.push(d.cpu === undefined ? missing() : { key: m, label: labels[m], value: percent(d.cpu), pct: d.cpu })
+    const out: Line[] = []
+    for (const r of widget.rows) {
+      const label = r.name || labels[r.type]
+      const na = (): Line => ({ key: r.id, label, value: 'n/a' })
+      switch (r.type) {
+        case 'cpu': {
+          const t = r.temp ? sensorFor(d, r.key) : undefined
+          const load = r.load ? d.cpu : undefined
+          // Show what is there; n/a only when nothing is.
+          if (load === undefined && !t) {
+            out.push(na())
+            break
+          }
+          const parts = [t ? `${Math.round(t.value)} °C` : '', load !== undefined ? percent(load) : ''].filter(Boolean)
+          out.push({
+            key: r.id,
+            label,
+            value: parts.join('   '),
+            // The bar follows the load; with the temperature alone it follows that.
+            pct: load !== undefined ? load : t?.value,
+            hot: load !== undefined ? load >= 90 : (t?.value ?? 0) >= 80,
+            title: t ? t.label : undefined,
+          })
           break
+        }
         case 'mem':
         case 'swap': {
-          const u = d[m]
-          if (!u) out.push(missing())
-          else if (u.total === 0) out.push({ key: m, label: labels[m], value: 'none' })
-          else out.push({ key: m, label: labels[m], value: `${bytes(u.used)} / ${bytes(u.total)}`, pct: u.percent })
+          const u = d[r.type]
+          if (!u) out.push(na())
+          else if (u.total === 0) out.push({ key: r.id, label, value: 'none' })
+          else out.push({ key: r.id, label, value: `${bytes(u.used)} / ${bytes(u.total)}`, pct: u.percent, hot: u.percent >= 90 })
           break
         }
         case 'load':
           out.push(
             d.load
               ? {
-                  key: m,
-                  label: labels[m],
+                  key: r.id,
+                  label,
                   value: [d.load.min1, d.load.min5, d.load.min15].map((n) => n.toFixed(2)).join(' · '),
                   title: `Load average over 1, 5 and 15 minutes (${d.load.cores} cores)`,
                 }
-              : missing(),
+              : na(),
           )
           break
         case 'uptime':
-          out.push(d.uptime ? { key: m, label: labels[m], value: d.uptime } : missing())
+          out.push(d.uptime ? { key: r.id, label, value: d.uptime } : na())
           break
-        case 'temp':
-          out.push(d.temp ? { key: m, label: labels[m], value: `${Math.round(d.temp.value)} °C`, title: d.temp.label } : missing())
+        case 'temp': {
+          const t = sensorFor(d, r.key)
+          out.push(t ? tempLine(r.id, r.name || (r.key ? r.key : labels.temp), t) : na())
           break
-        case 'disks':
-          if (!d.disks?.length) out.push(missing())
+        }
+        case 'disk': {
+          const disks = r.key ? d.disks?.filter((x) => x.mount === r.key) : d.disks
+          if (!disks?.length) out.push({ key: r.id, label: r.name || r.key || labels.disk, value: 'n/a' })
           else
-            for (const disk of d.disks)
-              out.push({ key: `disk:${disk.mount}`, label: disk.mount, value: `${bytes(disk.used)} / ${bytes(disk.total)}`, pct: disk.percent })
+            for (const x of disks)
+              out.push({
+                key: `${r.id}:${x.mount}`,
+                label: r.key ? r.name || x.mount : x.mount,
+                value: `${bytes(x.used)} / ${bytes(x.total)}`,
+                pct: x.percent,
+                hot: x.percent >= 90,
+                title: x.mount,
+              })
           break
-        case 'network':
-          out.push(d.network ? { key: m, label: labels[m], value: `↓ ${rate(d.network.rx)}   ↑ ${rate(d.network.tx)}` } : missing())
+        }
+        case 'network': {
+          // A total counts the physical cards, or the bridges when no card is listed.
+          const physical = d.network?.filter((n) => !n.virtual && !n.bridge)
+          const nics = r.key ? d.network?.filter((n) => n.name === r.key) : physical?.length ? physical : d.network?.filter((n) => n.bridge)
+          const l = r.name || r.key || labels.network
+          if (!nics?.length) out.push({ key: r.id, label: l, value: 'n/a' })
+          else {
+            const rx = nics.reduce((a, n) => a + n.rx, 0)
+            const tx = nics.reduce((a, n) => a + n.tx, 0)
+            out.push({ key: r.id, label: l, value: `↓ ${rate(rx)}   ↑ ${rate(tx)}` })
+          }
           break
+        }
       }
     }
     return out
   })
+
+  // Drop markers: left/right when blocks sit side by side (widgets always
+  // do; groups do in the grid layout), top/bottom when a group is stacked.
+  const grid = $derived(app.config?.settings.layout === 'grid')
 
   function dragStart(e: DragEvent) {
     app.drag = { kind: 'widget', id: widget.id }
@@ -108,22 +167,27 @@
     drop = null
   }
   function dragOver(e: DragEvent) {
-    if (app.drag?.kind !== 'widget' || app.drag.id === widget.id) return
+    const d = app.drag
+    if ((d?.kind !== 'widget' && d?.kind !== 'group') || d.id === widget.id) return
     e.preventDefault()
+    e.stopPropagation()
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    drop = e.clientX < r.left + r.width / 2 ? 'before' : 'after'
+    const side = grid || d.kind === 'widget'
+    vertical = !side
+    drop = (side ? e.clientX < r.left + r.width / 2 : e.clientY < r.top + r.height / 2) ? 'before' : 'after'
   }
   function dragLeave(e: DragEvent) {
     if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) drop = null
   }
   function onDrop(e: DragEvent) {
     const d = app.drag
-    if (d?.kind !== 'widget') return
+    if (d?.kind !== 'widget' && d?.kind !== 'group') return
     e.preventDefault()
+    e.stopPropagation()
     const after = drop === 'after'
     drop = null
     app.drag = null
-    app.moveWidget(d.id, widget.id, after)
+    app.moveBlock(d.id, widget.id, after)
   }
   function onKey(e: KeyboardEvent) {
     if (e.key === 'Enter' || e.key === ' ') {
@@ -146,12 +210,12 @@
     <p class="note down">Unreachable: {data.error}</p>
   {:else}
     <dl>
-      {#each rows as r (r.key)}
+      {#each lines as r (r.key)}
         <div class="row" title={r.title}>
           <dt>{r.label}</dt>
           <dd>{r.value}</dd>
           {#if r.pct !== undefined}
-            <div class="meter" role="presentation"><span class:hot={r.pct >= 90} style:width="{Math.min(100, Math.max(0, r.pct))}%"></span></div>
+            <div class="meter" role="presentation"><span class:hot={r.hot} style:width="{Math.min(100, Math.max(0, r.pct))}%"></span></div>
           {/if}
         </div>
       {/each}
@@ -164,6 +228,7 @@
   <div
     class="widget editing"
     class:dragging={app.drag?.kind === 'widget' && app.drag.id === widget.id}
+    class:vertical
     class:drop-before={drop === 'before'}
     class:drop-after={drop === 'after'}
     role="button"
@@ -215,6 +280,12 @@
   }
   .widget.drop-after {
     box-shadow: 4px 0 0 var(--accent);
+  }
+  .widget.vertical.drop-before {
+    box-shadow: 0 -4px 0 var(--accent);
+  }
+  .widget.vertical.drop-after {
+    box-shadow: 0 4px 0 var(--accent);
   }
   .widget :global(.edit-icon) {
     position: absolute;

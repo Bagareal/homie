@@ -32,24 +32,39 @@ func newWidgetCache() *widgetCache {
 	return &widgetCache{client: glances.New(), entries: map[string]*widgetEntry{}}
 }
 
-func targetOf(w config.Widget) glances.Target {
-	return glances.Target{
-		URL:        w.URL,
-		Username:   w.Username,
-		Password:   w.Password,
-		Metrics:    w.Metrics,
-		Mounts:     w.Mounts,
-		Interfaces: w.Interfaces,
-		Sensor:     w.Sensor,
+// metricsOf lists which groups of values the rows of a widget need, so a
+// widget that only shows the CPU never asks the host for its disks.
+func metricsOf(rows []config.Row) []string {
+	need := map[string]bool{}
+	for _, r := range rows {
+		switch r.Type {
+		case "cpu":
+			need["cpu"] = r.Load || need["cpu"]
+			need["sensors"] = r.Temp || need["sensors"]
+		case "temp":
+			need["sensors"] = true
+		case "disk":
+			need["disks"] = true
+		default: // mem, swap, load, uptime, network
+			need[r.Type] = true
+		}
 	}
+	var out []string
+	for _, m := range glances.Metrics { // a stable order
+		if need[m] {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+func targetOf(w config.Widget) glances.Target {
+	return glances.Target{URL: w.URL, Username: w.Username, Password: w.Password, Metrics: metricsOf(w.Rows)}
 }
 
 // cacheKey changes whenever anything that affects the reading does.
 func cacheKey(w config.Widget) string {
-	return strings.Join([]string{
-		w.URL, w.Username, w.Password,
-		strings.Join(w.Metrics, ","), strings.Join(w.Mounts, "\x00"), strings.Join(w.Interfaces, "\x00"), w.Sensor,
-	}, "\x01")
+	return strings.Join([]string{w.URL, w.Username, w.Password, strings.Join(metricsOf(w.Rows), ",")}, "\x01")
 }
 
 func (c *widgetCache) get(ctx context.Context, w config.Widget) glances.Result {
@@ -106,9 +121,9 @@ func (s *Server) getWidgets(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.widgets.all(r.Context(), s.store.Get().Widgets))
 }
 
-// testWidget checks a connection from the editor before it is saved. It
-// answers only with the Glances version or a short reason, never with what the
-// host returned. A blank password falls back to the one stored for the widget,
+// testWidget checks a connection from the editor before it is saved and reads
+// everything the host offers, so the editor can list its disks, sensors and
+// network cards. A blank password falls back to the one stored for the widget,
 // since the browser never has it.
 func (s *Server) testWidget(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -120,8 +135,8 @@ func (s *Server) testWidget(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	probe := config.Widget{ID: "probe", Name: "probe", Kind: "glances", URL: strings.TrimSpace(req.URL), Metrics: []string{}}
-	probe.Refresh, probe.Placement, probe.Width, probe.Opacity = 5, "top", 300, 100
+	probe := config.Widget{ID: "probe", Name: "probe", Kind: "glances", URL: strings.TrimSpace(req.URL), Rows: []config.Row{}}
+	probe.Refresh, probe.Width, probe.Opacity = 5, 300, 100
 	if err := (config.Config{Settings: config.Default().Settings, Widgets: []config.Widget{probe}}).Validate(); err != nil {
 		writeError(w, http.StatusBadRequest, "enter a valid address, starting with http:// or https://")
 		return
@@ -134,12 +149,15 @@ func (s *Server) testWidget(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	version, err := s.widgets.client.Ping(r.Context(), glances.Target{URL: probe.URL, Username: req.Username, Password: pw})
+	target := glances.Target{URL: probe.URL, Username: req.Username, Password: pw}
+	version, err := s.widgets.client.Ping(r.Context(), target)
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "version": version})
+	target.Metrics = glances.Metrics
+	reading := s.widgets.client.Fetch(r.Context(), target)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "version": version, "data": reading.Data})
 }
 
 func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {

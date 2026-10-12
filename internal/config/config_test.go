@@ -226,7 +226,7 @@ func widgetConfig() Config {
 	c := baseConfig()
 	c.Widgets = []Widget{{
 		ID: "w1", Name: "Proxmox", URL: "http://pve.local:61208",
-		Metrics: []string{"cpu", "mem", "disks"},
+		Rows: []Row{{ID: "r1", Type: "cpu", Load: true}, {ID: "r2", Type: "mem"}, {ID: "r3", Type: "disk", Key: "/"}},
 	}}
 	c.normalize()
 	return c
@@ -234,7 +234,7 @@ func widgetConfig() Config {
 
 func TestWidgetDefaultsAreFilledIn(t *testing.T) {
 	w := widgetConfig().Widgets[0]
-	if w.Kind != "glances" || w.Refresh != 5 || w.Placement != "top" || w.Width != 300 || w.Opacity != 100 {
+	if w.Kind != "glances" || w.Refresh != 5 || w.Width != 300 || w.Opacity != 100 {
 		t.Fatalf("defaults not applied: %+v", w)
 	}
 	if err := widgetConfig().Validate(); err != nil {
@@ -246,16 +246,21 @@ func TestValidateRejectsBadWidgets(t *testing.T) {
 	for name, mutate := range map[string]func(w *Widget){
 		"no name":         func(w *Widget) { w.Name = "" },
 		"bad scheme":      func(w *Widget) { w.URL = "ftp://pve" },
-		"unknown metric":  func(w *Widget) { w.Metrics = []string{"gpu"} },
-		"repeated metric": func(w *Widget) { w.Metrics = []string{"cpu", "cpu"} },
-		"fast refresh":    func(w *Widget) { w.Refresh = 1 },
-		"bad placement":   func(w *Widget) { w.Placement = "left" },
-		"narrow":          func(w *Widget) { w.Width = 50 },
-		"tall":            func(w *Widget) { w.Height = 5000 },
-		"bad color":       func(w *Widget) { w.Color = "red" },
-		"thick border":    func(w *Widget) { b := 9; w.BorderWidth = &b },
-		"empty filter":    func(w *Widget) { w.Mounts = []string{""} },
-		"unknown kind":    func(w *Widget) { w.Kind = "zabbix" },
+		"unknown row":     func(w *Widget) { w.Rows[0].Type = "gpu" },
+		"empty cpu row":   func(w *Widget) { w.Rows[0].Load = false },
+		"repeated row id": func(w *Widget) { w.Rows[1].ID = "r1" },
+		"long key":        func(w *Widget) { w.Rows[2].Key = strings.Repeat("x", 300) },
+		"too many rows": func(w *Widget) {
+			for i := 0; i < 40; i++ {
+				w.Rows = append(w.Rows, Row{ID: "x" + strings.Repeat("a", i), Type: "mem"})
+			}
+		},
+		"fast refresh": func(w *Widget) { w.Refresh = 1 },
+		"narrow":       func(w *Widget) { w.Width = 50 },
+		"tall":         func(w *Widget) { w.Height = 5000 },
+		"bad color":    func(w *Widget) { w.Color = "red" },
+		"thick border": func(w *Widget) { b := 9; w.BorderWidth = &b },
+		"unknown kind": func(w *Widget) { w.Kind = "zabbix" },
 	} {
 		c := widgetConfig()
 		mutate(&c.Widgets[0])
@@ -345,6 +350,60 @@ func TestStoreKeepsThePasswordWhenTheBrowserSendsNone(t *testing.T) {
 	w := st.Get().Widgets[0]
 	if w.ClearPassword || w.HasPassword {
 		t.Fatalf("transient flags must not be stored: %+v", w)
+	}
+}
+
+func TestWidgetsFromV110AreUpgradedToRowsAndOrder(t *testing.T) {
+	dir := t.TempDir()
+	old := `{"title":"T","settings":{"theme":"auto","density":"comfortable","checkInterval":60},
+	"groups":[{"id":"g1","name":"G","items":[]},{"id":"g2","name":"H","items":[]}],
+	"widgets":[
+	 {"id":"wtop","name":"Top","kind":"glances","url":"http://a:61208","metrics":["cpu","temp","disks","network"],
+	  "mounts":["/","/mnt/x"],"sensor":"Composite","refresh":5,"placement":"top","width":300,"height":0,"opacity":100},
+	 {"id":"wbot","name":"Bottom","kind":"glances","url":"http://b:61208","metrics":["mem","disks"],
+	  "refresh":5,"placement":"bottom","width":300,"height":0,"opacity":100}]}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := st.Get()
+	if err := c.Validate(); err != nil {
+		t.Fatalf("upgraded config should validate: %v", err)
+	}
+	if got := strings.Join(c.Order, ","); got != "wtop,g1,g2,wbot" {
+		t.Errorf("order = %s, want the old top/groups/bottom arrangement", got)
+	}
+	var kinds []string
+	for _, r := range c.Widgets[0].Rows {
+		kinds = append(kinds, r.Type+":"+r.Key)
+	}
+	if got := strings.Join(kinds, " "); got != "cpu: temp:Composite disk:/ disk:/mnt/x network:" {
+		t.Errorf("rows = %s", got)
+	}
+	if !c.Widgets[0].Rows[0].Load {
+		t.Error("the CPU row should keep showing the load")
+	}
+	if got := c.Widgets[1].Rows; len(got) != 2 || got[1].Type != "disk" || got[1].Key != "" {
+		t.Errorf("a widget without disk filters should show all disks: %+v", got)
+	}
+	raw, _ := json.Marshal(c)
+	for _, gone := range []string{`"metrics"`, `"mounts"`, `"placement"`, `"sensor"`} {
+		if strings.Contains(string(raw), gone) {
+			t.Errorf("old field %s still written", gone)
+		}
+	}
+}
+
+func TestOrderListsEveryBlockOnceAndFollowsTheSaved(t *testing.T) {
+	c := widgetConfig() // group g1, widget w1
+	c.Groups = append(c.Groups, Group{ID: "g2", Name: "Two", Items: []Item{}})
+	c.Order = []string{"g2", "ghost", "w1", "g2"}
+	c.normalize()
+	if got := strings.Join(c.Order, ","); got != "g2,w1,g1" {
+		t.Errorf("order = %s: unknown and repeated ids should go, a missing group should be appended", got)
 	}
 }
 
