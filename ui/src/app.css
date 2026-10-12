@@ -332,8 +332,8 @@ button.tape:hover {
   align-items: stretch;
   width: calc(var(--row-width) + 2 * var(--card-pad) + 2px);
   padding: var(--card-pad);
-  background: var(--shelf);
-  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--card-color, var(--shelf)) calc(var(--card-opacity, 40) * 1%), transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
   border-radius: 12px;
 }
 
@@ -342,11 +342,10 @@ button.tape:hover {
   width: 100%;
 }
 
-/* A card is always at least three rows tall, so cards line up evenly; a group
-   with more than 12 services just grows more rows. */
+/* A card is as tall as its services need (cards in the same row match each
+   other); a group with more than 12 services just grows more rows. */
 :root[data-layout='grid'] .shelf .grid {
   align-content: flex-start;
-  min-height: calc(3 * var(--tile-min) + 2 * var(--gap));
 }
 
 :root[data-layout='grid'] .shelf.drop-before {

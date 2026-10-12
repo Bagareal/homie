@@ -29,6 +29,8 @@ export interface Settings {
   backgroundOpacity: number
   layout: Layout
   barOpacity: number
+  cardColor?: string
+  cardOpacity: number
 }
 
 export interface Config {

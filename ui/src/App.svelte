@@ -28,12 +28,14 @@
     root.dataset.density = cfg.settings.density
     root.dataset.layout = cfg.settings.layout ?? 'list'
     root.style.setProperty('--bar-opacity', String(cfg.settings.barOpacity ?? 100))
+    root.style.setProperty('--card-opacity', String(cfg.settings.cardOpacity ?? 40))
     document.title = cfg.title || 'Homie'
 
     const vars: [string, string | undefined][] = [
       ['--bg', cfg.settings.backgroundColor],
       ['--tile', cfg.settings.tileColor],
       ['--accent', cfg.settings.accentColor],
+      ['--card-color', cfg.settings.cardColor],
     ]
     for (const [name, value] of vars) {
       if (value) root.style.setProperty(name, value)

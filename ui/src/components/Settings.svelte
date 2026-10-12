@@ -28,7 +28,7 @@
     app.save('Settings saved')
   }
 
-  function resetColor(key: 'backgroundColor' | 'tileColor' | 'accentColor') {
+  function resetColor(key: 'backgroundColor' | 'tileColor' | 'accentColor' | 'cardColor') {
     set(key, undefined)
   }
 
@@ -175,6 +175,13 @@
         <input type="color" value={s.accentColor || '#e9b949'} onchange={(e) => set('accentColor', e.currentTarget.value)} />
       </label>
       <button type="button" onclick={() => resetColor('accentColor')}>Reset</button>
+      {#if s.layout === 'grid'}
+        <label>
+          Group card
+          <input type="color" value={s.cardColor || '#242b33'} onchange={(e) => set('cardColor', e.currentTarget.value)} />
+        </label>
+        <button type="button" onclick={() => resetColor('cardColor')}>Reset</button>
+      {/if}
     </div>
     <p class="hint">Resetting a color goes back to the theme's own default (light or dark, depending on the Theme setting above).</p>
 
@@ -200,6 +207,21 @@
         <span>{s.backgroundOpacity}%</span>
       </label>
       <p class="hint">Lower it to let the page background color underneath show through.</p>
+    {/if}
+
+    {#if s.layout === 'grid'}
+      <label class="opacity-row">
+        Group card opacity
+        <input
+          type="range"
+          min="1"
+          max="100"
+          value={s.cardOpacity}
+          onchange={(e) => set('cardOpacity', Number(e.currentTarget.value))}
+        />
+        <span>{s.cardOpacity}%</span>
+      </label>
+      <p class="hint">Lower it to make the group cards see-through. Applies to the grid layout.</p>
     {/if}
 
     <label class="opacity-row">

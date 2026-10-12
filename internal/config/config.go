@@ -40,6 +40,10 @@ type Settings struct {
 	// BarOpacity is 1-100 for the top bar's background; 0 (omitted)
 	// normalizes to 100 (solid).
 	BarOpacity int `json:"barOpacity,omitempty"`
+	// CardColor (#rrggbb; empty = theme default) and CardOpacity (1-100;
+	// 0 normalizes to the default) style the group cards of the grid layout.
+	CardColor   string `json:"cardColor,omitempty"`
+	CardOpacity int    `json:"cardOpacity,omitempty"`
 }
 
 type Item struct {
@@ -74,6 +78,7 @@ func Default() Config {
 			BackgroundOpacity: 100,
 			Layout:            "list",
 			BarOpacity:        100,
+			CardOpacity:       40,
 		},
 		Groups: []Group{},
 	}
@@ -93,6 +98,9 @@ func (c *Config) normalize() {
 	}
 	if c.Settings.BackgroundOpacity == 0 {
 		c.Settings.BackgroundOpacity = d.Settings.BackgroundOpacity
+	}
+	if c.Settings.CardOpacity == 0 {
+		c.Settings.CardOpacity = d.Settings.CardOpacity
 	}
 	if c.Settings.Layout == "" {
 		c.Settings.Layout = d.Settings.Layout
@@ -129,6 +137,9 @@ func (c Config) Validate() error {
 	default:
 		return fmt.Errorf("invalid layout: %q", c.Settings.Layout)
 	}
+	if o := c.Settings.CardOpacity; o < 0 || o > 100 {
+		return errors.New("card opacity must be between 0 and 100")
+	}
 	if o := c.Settings.BarOpacity; o < 0 || o > 100 {
 		return errors.New("top bar opacity must be between 0 and 100")
 	}
@@ -139,6 +150,7 @@ func (c Config) Validate() error {
 		"background": c.Settings.BackgroundColor,
 		"tile":       c.Settings.TileColor,
 		"accent":     c.Settings.AccentColor,
+		"card":       c.Settings.CardColor,
 	} {
 		if v != "" && !hexColor.MatchString(v) {
 			return fmt.Errorf("invalid %s color: must be in #rrggbb format", name)
