@@ -142,6 +142,7 @@
     {/each}
   </div>
 
+  <div class="panels">
   {#if tab === 'appearance'}
     <section>
       <h2>Theme and layout</h2>
@@ -265,6 +266,7 @@
       </div>
     </section>
   {/if}
+  </div>
 
   {#if version}<p class="version">Homie {version}</p>{/if}
 </main>

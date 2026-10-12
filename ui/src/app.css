@@ -633,14 +633,23 @@ label.check {
 /* Settings */
 
 .settings {
-  max-width: 720px;
+  /* About two thirds of a wide screen; the sections flow into up to three
+     columns and drop to fewer as the window narrows (one on a phone). */
+  width: min(100%, max(66vw, 960px));
   margin: 0 auto;
   padding: 20px 20px 48px;
   display: grid;
   gap: 14px;
 }
 
+.panels {
+  columns: 3 440px;
+  column-gap: 14px;
+}
+
 .settings section {
+  break-inside: avoid;
+  margin-bottom: 14px;
   display: grid;
   gap: 16px;
   padding: 18px 20px;
