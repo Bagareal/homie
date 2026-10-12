@@ -75,8 +75,8 @@ func TestFetchReadsEveryMetric(t *testing.T) {
 	if d.Uptime == nil || *d.Uptime != "4 days, 4:51:10" {
 		t.Errorf("uptime = %v", d.Uptime)
 	}
-	if d.Temp == nil || d.Temp.Value != 52 || d.Temp.Label != "Core 1" {
-		t.Errorf("temp = %+v (want the hottest temperature, not fans or batteries)", d.Temp)
+	if d.Temp == nil || d.Temp.Value != 48 || d.Temp.Label != "Package id 0" {
+		t.Errorf("temp = %+v (want the CPU package, not the hottest sensor)", d.Temp)
 	}
 	if len(d.Disks) != 2 || d.Disks[1].Mount != "/mnt/data" || d.Disks[1].Percent != 89.1 {
 		t.Errorf("disks = %+v", d.Disks)
@@ -84,6 +84,28 @@ func TestFetchReadsEveryMetric(t *testing.T) {
 	// Only the physical card counts: bridge, VM tap and loopback are skipped.
 	if d.Network == nil || d.Network.Rx != 1000 || d.Network.Tx != 200 {
 		t.Errorf("network = %+v", d.Network)
+	}
+}
+
+func TestPickTemp(t *testing.T) {
+	// Real sensors from a Dell host: dell_smm 6 reads a bogus 126.
+	s := []sensor{
+		{Label: "Composite", Value: 35.0, Unit: "C", Type: "temperature_core"},
+		{Label: "Package id 0", Value: 42.0, Unit: "C", Type: "temperature_core"},
+		{Label: "dell_smm 6", Value: 126.0, Unit: "C", Type: "temperature_core"},
+		{Label: "dell_smm 0", Value: 1811.0, Unit: "R", Type: "fan_speed"},
+	}
+	if got := pickTemp(s, ""); got == nil || got.Label != "Package id 0" {
+		t.Errorf("auto = %+v", got)
+	}
+	if got := pickTemp(s, "composite"); got == nil || got.Value != 35 {
+		t.Errorf("named = %+v", got)
+	}
+	if got := pickTemp(s, "nope"); got != nil {
+		t.Errorf("unknown name = %+v, want none", got)
+	}
+	if got := pickTemp(s[2:], ""); got == nil || got.Value != 126 {
+		t.Errorf("no CPU sensor: want the warmest, got %+v", got)
 	}
 }
 

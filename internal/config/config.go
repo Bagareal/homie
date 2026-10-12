@@ -99,6 +99,8 @@ type Widget struct {
 	// Mounts and Interfaces narrow the disks and network cards shown; empty = all.
 	Mounts     []string `json:"mounts,omitempty"`
 	Interfaces []string `json:"interfaces,omitempty"`
+	// Sensor is the temperature sensor to show, by label; empty = the CPU package.
+	Sensor string `json:"sensor,omitempty"`
 	// Refresh is how often the data is re-read, in seconds (2-300).
 	Refresh int `json:"refresh"`
 	// Placement is "top" (above the groups) or "bottom" (below them).
@@ -344,6 +346,9 @@ func (c Config) validateWidgets(seen map[string]bool) error {
 					return fmt.Errorf("widget %q has an invalid disk or network filter", w.Name)
 				}
 			}
+		}
+		if len(w.Sensor) > 100 {
+			return fmt.Errorf("widget %q: the sensor name is too long", w.Name)
 		}
 		if w.Refresh < 2 || w.Refresh > 300 {
 			return fmt.Errorf("widget %q: the refresh interval must be between 2 and 300 seconds", w.Name)

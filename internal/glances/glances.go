@@ -38,6 +38,8 @@ type Target struct {
 	Metrics    []string
 	Mounts     []string
 	Interfaces []string
+	// Sensor is the label of the temperature sensor to show; empty = automatic.
+	Sensor string
 }
 
 type Usage struct {
@@ -234,7 +236,7 @@ func (c *Client) read(ctx context.Context, t Target, prefix, metric string, d *D
 		if err := c.get(ctx, t, prefix, "sensors", &v); err != nil {
 			return err
 		}
-		temp := hottest(v)
+		temp := pickTemp(v, t.Sensor)
 		if temp == nil {
 			return errors.New("no temperature sensors")
 		}
@@ -272,16 +274,41 @@ type sensor struct {
 	Type  string `json:"type"`
 }
 
-// hottest returns the warmest temperature sensor, or nil if there is none.
-func hottest(sensors []sensor) *Temp {
-	var best *Temp
+// cpuLabels are the sensors that stand for the processor, in order of
+// preference (Intel package, AMD control/die temperature, generic names).
+var cpuLabels = []string{"package id 0", "tctl", "tdie", "cpu"}
+
+// pickTemp chooses the temperature to show: the sensor named by want if there
+// is one, otherwise the CPU package sensor, otherwise the warmest sensor.
+// Taking the maximum alone is wrong on some machines: a Dell's dell_smm
+// reports a bogus 126 °C next to a 42 °C CPU.
+func pickTemp(sensors []sensor, want string) *Temp {
+	var temps []Temp
 	for _, s := range sensors {
 		v, ok := s.Value.(float64)
-		if !ok || !(strings.HasPrefix(s.Type, "temperature") || s.Unit == "C") {
-			continue
+		if ok && (strings.HasPrefix(s.Type, "temperature") || s.Unit == "C") {
+			temps = append(temps, Temp{Label: s.Label, Value: v})
 		}
-		if best == nil || v > best.Value {
-			best = &Temp{Label: s.Label, Value: v}
+	}
+	if want != "" {
+		for _, t := range temps {
+			if strings.EqualFold(t.Label, want) {
+				return &t
+			}
+		}
+		return nil
+	}
+	for _, label := range cpuLabels {
+		for _, t := range temps {
+			if strings.EqualFold(t.Label, label) {
+				return &t
+			}
+		}
+	}
+	var best *Temp
+	for i, t := range temps {
+		if best == nil || t.Value > best.Value {
+			best = &temps[i]
 		}
 	}
 	return best

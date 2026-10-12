@@ -18,7 +18,7 @@
     ['swap', 'Swap'],
     ['load', 'Load average'],
     ['uptime', 'Uptime'],
-    ['temp', 'Temperature (hottest sensor)'],
+    ['temp', 'Temperature'],
     ['disks', 'Disks'],
     ['network', 'Network traffic'],
   ]
@@ -133,6 +133,7 @@
       clearPassword: !!w.clearPassword || (addressChanged && !w.password),
       mounts: list(mountsText),
       interfaces: list(interfacesText),
+      sensor: (w.sensor ?? '').trim(),
     }
     app.upsertWidget(out)
     dialog.close()
@@ -237,6 +238,12 @@
         <label>
           Only these disks <small>(mount points, comma-separated; empty = all)</small>
           <input bind:value={mountsText} placeholder="/, /mnt/data" />
+        </label>
+      {/if}
+      {#if w.metrics.includes('temp')}
+        <label>
+          Temperature sensor <small>(its name in Glances; empty = the CPU package)</small>
+          <input bind:value={w.sensor} placeholder="Package id 0" />
         </label>
       {/if}
       {#if w.metrics.includes('network')}

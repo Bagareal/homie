@@ -58,6 +58,7 @@ export interface Widget {
   metrics: WidgetMetric[]
   mounts?: string[]
   interfaces?: string[]
+  sensor?: string
   refresh: number
   placement: Placement
   width: number

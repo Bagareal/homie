@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onMount, tick } from 'svelte'
   import { app } from '../lib/state.svelte'
   import { barHeight } from '../lib/barHeight'
   import { clearDraft, loadDraft, type ItemFields } from '../lib/draft'
@@ -14,6 +14,7 @@
   let groupEdit = $state<{ id: string | null; draft?: string } | null>(null)
   let widgetEdit = $state<{ id: string | null } | null>(null)
   let search: HTMLInputElement | undefined = $state()
+  let main: HTMLElement | undefined = $state()
 
   // A draft left behind by a refresh or a closed tab: offer to pick it back up.
   onMount(async () => {
@@ -65,6 +66,29 @@
     return parts.join(', ')
   })
   const anyDown = $derived(summary.includes('unreachable'))
+
+  // In the grid layout the widgets take the width of the cards' rows (as many
+  // cards as fit side by side), so they start at the cards' left edge instead
+  // of floating in the middle of the page.
+  $effect(() => {
+    void [cfg.settings.layout, cfg.groups.length, cfg.widgets.length, app.query, app.editing]
+    const el = main
+    if (!el) return
+    const fit = () => {
+      const strips = el.querySelectorAll<HTMLElement>('.widgets')
+      const shelf = el.querySelector<HTMLElement>('.shelf')
+      if (cfg.settings.layout !== 'grid' || !shelf) return strips.forEach((s) => s.style.removeProperty('width'))
+      const cs = getComputedStyle(el)
+      const gap = parseFloat(cs.columnGap) || 20
+      const avail = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
+      const cols = Math.max(1, Math.min(visible.length, Math.floor((avail + gap) / (shelf.offsetWidth + gap))))
+      strips.forEach((s) => (s.style.width = `${cols * shelf.offsetWidth + (cols - 1) * gap}px`))
+    }
+    const ro = new ResizeObserver(fit)
+    ro.observe(el)
+    tick().then(fit)
+    return () => ro.disconnect()
+  })
 
   function onWindowKey(e: KeyboardEvent) {
     if (app.editing || itemEdit || groupEdit || widgetEdit) return
@@ -131,7 +155,7 @@
   {/if}
 {/snippet}
 
-<main class="shelves" class:editing={app.editing}>
+<main class="shelves" class:editing={app.editing} bind:this={main}>
   {@render widgets('top')}
   {#if cfg.groups.length === 0}
     <div class="empty">

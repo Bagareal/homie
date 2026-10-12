@@ -249,7 +249,7 @@ select {
 .widgets {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
+  justify-content: flex-start;
   align-items: flex-start;
   align-self: center;
   gap: var(--gap);
@@ -259,7 +259,9 @@ select {
 }
 
 :root[data-layout='grid'] .widgets {
-  flex-basis: 100%;
+  /* Dashboard.svelte narrows this to the width of the group cards' rows, so
+     the widgets line up with the cards' left edge. */
+  flex: 0 0 auto;
   width: 100%;
   margin-bottom: 0;
 }

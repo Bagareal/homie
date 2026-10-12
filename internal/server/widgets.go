@@ -40,6 +40,7 @@ func targetOf(w config.Widget) glances.Target {
 		Metrics:    w.Metrics,
 		Mounts:     w.Mounts,
 		Interfaces: w.Interfaces,
+		Sensor:     w.Sensor,
 	}
 }
 
@@ -47,7 +48,7 @@ func targetOf(w config.Widget) glances.Target {
 func cacheKey(w config.Widget) string {
 	return strings.Join([]string{
 		w.URL, w.Username, w.Password,
-		strings.Join(w.Metrics, ","), strings.Join(w.Mounts, "\x00"), strings.Join(w.Interfaces, "\x00"),
+		strings.Join(w.Metrics, ","), strings.Join(w.Mounts, "\x00"), strings.Join(w.Interfaces, "\x00"), w.Sensor,
 	}, "\x01")
 }
 
