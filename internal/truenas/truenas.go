@@ -16,7 +16,7 @@ import (
 )
 
 // Metrics are the groups of values that can be read.
-var Metrics = []string{"info", "cpu", "mem", "pools", "drives", "alerts"}
+var Metrics = []string{"info", "cpu", "mem", "pools", "drives", "alerts", "apps"}
 
 // Target is one TrueNAS system and which of the Metrics to read.
 type Target struct {
@@ -78,6 +78,14 @@ type Alerts struct {
 	Items []Alert `json:"items,omitempty"`
 }
 
+// Apps counts the installed apps.
+type Apps struct {
+	Running int `json:"running"`
+	Total   int `json:"total"`
+	// Stopped names the apps that are not running (up to 10).
+	Stopped []string `json:"stopped,omitempty"`
+}
+
 // Data holds the values that were asked for and could be read.
 type Data struct {
 	Version  string   `json:"version,omitempty"`
@@ -89,6 +97,7 @@ type Data struct {
 	Pools    []Pool   `json:"pools,omitempty"`
 	Drives   []Drive  `json:"drives,omitempty"`
 	Alerts   *Alerts  `json:"alerts,omitempty"`
+	Apps     *Apps    `json:"apps,omitempty"`
 }
 
 // Result is what the dashboard receives for one widget.
@@ -270,6 +279,14 @@ func (c *Client) Fetch(ctx context.Context, t Target) Result {
 			failed["alerts"] = true
 		} else {
 			r.Data.Alerts = alerts
+		}
+	}
+
+	if want["apps"] {
+		if apps, err := readApps(conn); err != nil {
+			failed["apps"] = true
+		} else {
+			r.Data.Apps = apps
 		}
 	}
 
@@ -475,6 +492,28 @@ func readAlerts(c *wsConn) (*Alerts, error) {
 		}
 	}
 	sort.SliceStable(out.Items, func(i, j int) bool { return levelRank[out.Items[i].Level] > levelRank[out.Items[j].Level] })
+	return out, nil
+}
+
+// ---- apps
+
+func readApps(c *wsConn) (*Apps, error) {
+	var raw []struct {
+		Name  string `json:"name"`
+		State string `json:"state"`
+	}
+	if err := c.call("app.query", []any{[]any{}, map[string]any{"select": []string{"name", "state"}}}, &raw); err != nil {
+		return nil, err
+	}
+	out := &Apps{Total: len(raw)}
+	for _, a := range raw {
+		if strings.EqualFold(a.State, "RUNNING") {
+			out.Running++
+		} else if len(out.Stopped) < 10 {
+			out.Stopped = append(out.Stopped, a.Name)
+		}
+	}
+	sort.Strings(out.Stopped)
 	return out, nil
 }
 

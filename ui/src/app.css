@@ -263,16 +263,6 @@ select {
   align-self: flex-start;
 }
 
-.add-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-:root[data-layout='grid'] .add-row {
-  flex-basis: 100%;
-}
-
 .shelf:last-of-type {
   border-bottom: none;
   padding-bottom: 0;
@@ -557,13 +547,6 @@ button.tape:hover {
 .icon .glyph {
   font-size: calc(var(--icon) * 0.7);
   line-height: 1;
-}
-
-.add-group {
-  align-self: flex-start;
-  border-style: dashed;
-  background: transparent;
-  color: var(--muted);
 }
 
 .empty {

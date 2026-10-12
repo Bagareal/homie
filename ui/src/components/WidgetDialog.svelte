@@ -26,6 +26,7 @@
     pool: 'Pool',
     drive: 'Drive temperature',
     alerts: 'Alerts',
+    apps: 'Apps',
   }
 
   const defaultRows = (kind: WidgetKind): Row[] =>
@@ -64,6 +65,42 @@
   // What the host reported at the last successful test: used to pick disks,
   // sensors and network cards, and to preview the widget with real values.
   let found = $state<HostData | null>(null)
+
+  type Tab = 'source' | 'values' | 'size' | 'look'
+  const tabs: [Tab, string][] = [
+    ['source', 'Source'],
+    ['values', 'Values'],
+    ['size', 'Size'],
+    ['look', 'Appearance'],
+  ]
+  // svelte-ignore state_referenced_locally
+  let tab = $state<Tab>(saved ? 'values' : 'source')
+
+  // The preview is shrunk to fit its column when the widget is wider than it.
+  let stageW = $state(0)
+  let naturalH = $state(0)
+  const fit = $derived(stageW > 0 ? Math.min(1, (stageW - 30) / w.width) : 1)
+
+  // The size tab draws the widget next to a group card of the real dashboard,
+  // on a strip as wide as the page, all at the same scale.
+  let vw = $state(0)
+  let diagramW = $state(0)
+  const page = $derived.by(() => {
+    void [tab, vw]
+    const shelf = document.querySelector<HTMLElement>('.shelf')
+    return {
+      width: document.querySelector<HTMLElement>('.scroller')?.clientWidth ?? vw,
+      card: { w: shelf?.offsetWidth ?? 562, h: shelf?.offsetHeight ?? 200 },
+    }
+  })
+  const widgetH = $derived(w.height > 0 ? w.height : naturalH)
+  // The strip has 8 px of padding on each side; the rest stands for the page width.
+  const scale = $derived(page.width > 0 ? Math.max(0, diagramW - 16) / page.width : 0)
+
+  function fail(on: Tab, message: string) {
+    tab = on
+    error = message
+  }
 
   const nas = $derived(w.kind === 'truenas')
   const dirty = $derived(JSON.stringify(w) !== initialJson)
@@ -199,15 +236,15 @@
   function submit(e: SubmitEvent) {
     e.preventDefault()
     const url = normalizeUrl(w.url)
-    if (!w.name.trim()) return void (error = 'Enter a name for the widget.')
+    if (!w.name.trim()) return fail('source', 'Enter a name for the widget.')
     try {
       const u = new URL(url)
       if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error()
-      if (nas && u.protocol !== 'https:') return void (error = 'A TrueNAS address must start with https:// (TrueNAS revokes an API key sent over plain http).')
+      if (nas && u.protocol !== 'https:') return fail('source', 'A TrueNAS address must start with https:// (TrueNAS revokes an API key sent over plain http).')
     } catch {
-      return void (error = `Enter a valid address, for example ${nas ? 'https://truenas.local' : 'http://192.168.1.10:61208'}.`)
+      return fail('source', `Enter a valid address, for example ${nas ? 'https://truenas.local' : 'http://192.168.1.10:61208'}.`)
     }
-    if (w.rows.length === 0) return void (error = 'Add at least one value to show.')
+    if (w.rows.length === 0) return fail('values', 'Add at least one value to show.')
     const out: Widget = {
       ...$state.snapshot(w),
       id: saved?.id ?? uid(),
@@ -241,6 +278,7 @@
 </script>
 
 <svelte:window
+  bind:innerWidth={vw}
   onbeforeunload={(e) => {
     if (dirty) e.preventDefault()
   }}
@@ -272,13 +310,26 @@
   <form bind:this={form} onsubmit={submit} novalidate>
     <h2>{saved ? 'Edit widget' : 'New widget'}</h2>
 
-    <div class="preview">
-      <WidgetView widget={w} data={previewData} preview />
-      {#if previewIsSample}<small>Preview with sample values. Test the connection to see your host's.</small>{/if}
-    </div>
+    <div class="body">
+      <aside class="stage" bind:clientWidth={stageW} aria-label="Preview">
+        <div class="scaler" style:width="{w.width * fit}px" style:height="{(w.height > 0 ? w.height : naturalH) * fit}px">
+          <div class="natural" bind:offsetHeight={naturalH} style:width="{w.width}px" style:transform="scale({fit})">
+            <WidgetView widget={w} data={previewData} preview />
+          </div>
+        </div>
+        {#if fit < 1}<small>Shown at {Math.round(fit * 100)}% to fit.</small>{/if}
+        {#if previewIsSample}<small>Sample values. Test the connection to see your host's.</small>{/if}
+      </aside>
 
+      <div class="main">
+        <div class="tabs" role="tablist" aria-label="Widget sections">
+          {#each tabs as [id, label] (id)}
+            <button type="button" role="tab" class:on={tab === id} aria-selected={tab === id} onclick={() => (tab = id)}>{label}</button>
+          {/each}
+        </div>
+        <div class="panel">
+    {#if tab === 'source'}
     <fieldset>
-      <legend>Source</legend>
       {#if !saved}
         <label>
           Type
@@ -335,9 +386,8 @@
         {#if testResult}<span class:ok={testResult.ok} class:bad={!testResult.ok} role="status">{testResult.text}</span>{/if}
       </div>
     </fieldset>
-
+    {:else if tab === 'values'}
     <fieldset>
-      <legend>Values</legend>
       <small>Drag to reorder (or use the arrows). {nas ? 'Pools and drives' : 'Disks, sensors and network cards'} can be chosen once the connection has been tested.</small>
       <ul class="rows">
         {#each w.rows as r, i (r.id)}
@@ -418,6 +468,7 @@
         {#if nas}
           <option value="pool">All pools</option>
           <option value="alerts">Alerts</option>
+          <option value="apps">Apps</option>
           <option value="drive">Hottest drive</option>
           <option value="cpu">CPU</option>
           <option value="mem">Memory</option>
@@ -462,16 +513,27 @@
       </select>
       <Slider label="Refresh every" unit="s" min={2} max={300} value={w.refresh} oninput={(v) => (w.refresh = v)} oncommit={noop} />
     </fieldset>
-
+    {:else if tab === 'size'}
     <fieldset>
-      <legend>Size</legend>
       <Slider label="Width" unit="px" min={120} max={1200} value={w.width} oninput={(v) => (w.width = v)} oncommit={noop} />
       <Slider label="Height (0 = fit content)" unit="px" min={0} max={1000} value={w.height} oninput={(v) => (w.height = v)} oncommit={noop} />
-      <small>Drag the widget wherever you like on the dashboard while editing, even between two groups.</small>
+      <div class="diagram" bind:clientWidth={diagramW} style:height="{Math.max(widgetH, page.card.h) * scale + 16}px" style:gap="{20 * scale}px" aria-hidden="true">
+        <div
+          class="d-widget"
+          style:width="{w.width * scale}px"
+          style:height="{widgetH * scale}px"
+          style:background="color-mix(in srgb, {w.color ?? 'var(--tile)'} {w.opacity}%, transparent)"
+          style:border="{Math.max(1, (w.borderWidth ?? 1) * scale)}px solid {w.borderColor ?? 'var(--line)'}"
+        >widget</div>
+        <div class="d-card" style:width="{page.card.w * scale}px" style:height="{page.card.h * scale}px">group card</div>
+      </div>
+      <small>
+        To scale, on a page {page.width} px wide: this widget is {w.width} × {widgetH} px, a group card {page.card.w} × {page.card.h} px.
+        Drag the widget wherever you like on the dashboard while editing, even between two groups.
+      </small>
     </fieldset>
-
+    {:else}
     <fieldset>
-      <legend>Appearance</legend>
       <ColorField label="Background" cssVar="--tile" {theme} value={w.color} onpreview={(v) => (w.color = v)} oncommit={noop} />
       <Slider label="Background opacity" min={1} value={w.opacity} oninput={(v) => (w.opacity = v)} oncommit={noop} />
       <ColorField label="Text" cssVar="--text" {theme} value={w.textColor} onpreview={(v) => (w.textColor = v)} oncommit={noop} />
@@ -479,6 +541,10 @@
       <Slider label="Border width" unit="px" min={0} max={8} value={w.borderWidth ?? 1} oninput={(v) => (w.borderWidth = v)} oncommit={noop} />
       <ColorField label="Bars" cssVar="--accent" {theme} value={w.barColor} onpreview={(v) => (w.barColor = v)} oncommit={noop} />
     </fieldset>
+    {/if}
+        </div>
+      </div>
+    </div>
 
     {#if error}<p class="form-error" role="alert">{error}</p>{/if}
 
@@ -492,9 +558,105 @@
 
 <style>
   .dialog.wide {
-    width: min(620px, calc(100vw - 32px));
-    max-height: calc(100vh - 32px);
+    width: min(960px, calc(100vw - 32px));
+    height: min(800px, calc(100vh - 32px));
+    overflow: hidden;
+  }
+  .dialog.wide form {
+    height: 100%;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 18px 20px;
+  }
+  .body {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
+    gap: 18px;
+  }
+  .stage {
+    align-self: start;
+    max-height: 100%;
+    overflow: auto;
+    display: grid;
+    gap: 6px;
+    justify-items: center;
+    padding: 14px;
+    border: 1px dashed var(--line);
+    border-radius: 8px;
+  }
+  .scaler {
+    max-width: 100%;
+  }
+  .natural {
+    transform-origin: top left;
+  }
+  .main {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .panel {
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
+    padding: 16px 6px 4px 0;
+  }
+  .tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--line);
+  }
+  .tabs button {
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background: none;
+    padding: 8px 14px;
+    margin-bottom: -1px;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .tabs button:hover {
+    color: var(--text);
+  }
+  .tabs button.on {
+    color: var(--text);
+    border-bottom-color: var(--accent);
+  }
+  .diagram {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    padding: 8px;
+    margin-top: 4px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--bg);
+    overflow: hidden;
+  }
+  .d-card,
+  .d-widget {
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 0.7rem;
+  }
+  .d-card {
+    flex: none;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--shelf) 60%, transparent);
+  }
+  .d-widget {
+    flex: none;
+    border-radius: 3px;
+    box-sizing: border-box;
   }
   fieldset {
     display: grid;
@@ -502,23 +664,6 @@
     margin: 0;
     padding: 0;
     border: none;
-  }
-  legend {
-    padding: 0 0 8px;
-    color: var(--accent);
-    font-size: 0.85rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-  .preview {
-    display: grid;
-    gap: 6px;
-    justify-items: center;
-    padding: 14px;
-    overflow: hidden;
-    border: 1px dashed var(--line);
-    border-radius: 8px;
   }
   .two {
     display: grid;
@@ -606,6 +751,15 @@
   .add {
     justify-self: start;
     max-width: 100%;
+  }
+  @media (max-width: 760px) {
+    .body {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: minmax(0, 34%) minmax(0, 1fr);
+    }
+    .stage {
+      max-height: 100%;
+    }
   }
   @media (max-width: 520px) {
     .two {

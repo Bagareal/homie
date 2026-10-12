@@ -253,8 +253,8 @@ func TestMetricsOfAsksOnlyForWhatTheRowsNeed(t *testing.T) {
 }
 
 func TestMetricsOfForTrueNAS(t *testing.T) {
-	got := metricsOf("truenas", []config.Row{{Type: "pool"}, {Type: "mem"}, {Type: "alerts"}, {Type: "drive"}, {Type: "version"}})
-	if want := "info,mem,pools,drives,alerts"; strings.Join(got, ",") != want {
+	got := metricsOf("truenas", []config.Row{{Type: "pool"}, {Type: "mem"}, {Type: "alerts"}, {Type: "drive"}, {Type: "version"}, {Type: "apps"}})
+	if want := "info,mem,pools,drives,alerts,apps"; strings.Join(got, ",") != want {
 		t.Errorf("got %v, want %s", got, want)
 	}
 }

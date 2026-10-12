@@ -58,7 +58,7 @@ The backend periodically runs an active check on each service (interval set in S
 
 A widget is a standalone block, separate from the groups, that shows live data from a host running [Glances](https://nicolargo.github.io/glances/). Use **Edit → Add widget**, give it a name and press "Test connection": Homie then lists the disks, temperature sensors and network cards the host reports, so you pick them from a menu instead of typing them. Each value is a row you can rename ("HDD esterno" instead of `/mnt/hdd-esterno`), reorder by dragging, or remove. The CPU row can show the load, a temperature, or both side by side (the bar follows the load, or the temperature when it is alone). Other rows: memory, swap, load average, uptime, one temperature sensor, one disk (or all), network traffic.
 
-You choose the width and height and the colors (background with opacity, text, border, bars). While editing, drag a widget wherever you like, even between two groups: groups and widgets share one order. In the grid layout a widget flows like a card.
+The editor has four tabs (Source, Values, Size, Appearance) with the preview always in view; the Size tab draws the widget to scale next to a real group card. In edit mode the "Add group" and "Add widget" buttons are in the top bar. You choose the width and height and the colors (background with opacity, text, border, bars). While editing, drag a widget wherever you like, even between two groups: groups and widgets share one order. In the grid layout a widget flows like a card.
 
 On the host, start Glances in web server mode (it listens on port 61208):
 
@@ -77,7 +77,7 @@ Choose the **TrueNAS** type when adding a widget (TrueNAS 25.04 or later). Homie
 
 Create the key in TrueNAS from the user menu at the top right (*My API Keys → Add API Key*), linked to a dedicated user that has only the *Readonly Admin* role. Paste it into the widget; it is stored on the Homie server and never sent back to the browser or exported. If the login is refused, also enter the name of the user the key belongs to.
 
-Rows available: every pool (health, space used, last scrub in the tooltip), alerts (the count of undismissed ones, red when serious), the hottest drive or a chosen one, CPU, memory, load average, uptime and the TrueNAS version. "Test connection" lists your pools and drives to pick from.
+Rows available: every pool (health, space used, last scrub in the tooltip), alerts (the count of undismissed ones, red when serious), apps (running / installed, the stopped ones in the tooltip), the hottest drive or a chosen one, CPU, memory, load average, uptime and the TrueNAS version. "Test connection" lists your pools and drives to pick from.
 
 ## Appearance
 

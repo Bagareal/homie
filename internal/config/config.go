@@ -146,7 +146,7 @@ const (
 // RowTypes lists the kinds of row each kind of widget can have.
 var RowTypes = map[string][]string{
 	"glances": {"cpu", "mem", "swap", "load", "uptime", "temp", "disk", "network"},
-	"truenas": {"cpu", "mem", "load", "uptime", "version", "pool", "drive", "alerts"},
+	"truenas": {"cpu", "mem", "load", "uptime", "version", "pool", "drive", "alerts", "apps"},
 }
 
 type Config struct {

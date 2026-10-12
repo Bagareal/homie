@@ -35,6 +35,7 @@ var defaults = map[string]string{
 		{"name":"boot-pool","status":"DEGRADED","healthy":false,"size":100,"allocated":50,"scan":null}]`,
 	"disk.query":        `[{"name":"sda","model":"WDC","pool":"tank"},{"name":"nvme0n1","model":"Samsung","pool":null}]`,
 	"disk.temperatures": `{"sda":38,"nvme0n1":null}`,
+	"app.query":         `[{"name":"plex","state":"RUNNING"},{"name":"nextcloud","state":"STOPPED"},{"name":"immich","state":"RUNNING"},{"name":"adguard","state":"DEPLOYING"}]`,
 	"alert.list": `[
 		{"level":"WARNING","text":"Scrub overdue","dismissed":false},
 		{"level":"CRITICAL","text":"Pool degraded","dismissed":false},
@@ -229,6 +230,9 @@ func TestFetchReadsEverything(t *testing.T) {
 	}
 	if len(d.Drives) != 2 || d.Drives[1].Name != "sda" || d.Drives[1].Temp == nil || *d.Drives[1].Temp != 38 || d.Drives[0].Temp != nil {
 		t.Errorf("drives = %+v", d.Drives)
+	}
+	if d.Apps == nil || d.Apps.Running != 2 || d.Apps.Total != 4 || strings.Join(d.Apps.Stopped, ",") != "adguard,nextcloud" {
+		t.Errorf("apps = %+v", d.Apps)
 	}
 	if d.Alerts == nil || d.Alerts.Count != 2 || d.Alerts.Level != "CRITICAL" || d.Alerts.Items[0].Text != "Pool degraded" {
 		t.Errorf("alerts = %+v (the dismissed one must not count)", d.Alerts)

@@ -50,6 +50,7 @@
     pool: 'Pool',
     drive: 'Drive',
     alerts: 'Alerts',
+    apps: 'Apps',
   }
 
   // A temperature has no natural 100%: the bar fills to 100 °C and warns from 80.
@@ -182,6 +183,18 @@
           const l = r.name || r.key || 'Hottest drive'
           if (pick?.temp === undefined) out.push({ key: r.id, label: l, value: 'n/a' })
           else out.push({ key: r.id, label: l, value: `${Math.round(pick.temp)} °C`, pct: pick.temp, hot: pick.temp >= 55, title: `${pick.name}${pick.model ? ` (${pick.model})` : ''}` })
+          break
+        }
+        case 'apps': {
+          const a = d.apps
+          if (!a) out.push(na())
+          else
+            out.push({
+              key: r.id,
+              label,
+              value: `${a.running} / ${a.total}`,
+              title: a.stopped?.length ? `Not running: ${a.stopped.join(', ')}` : 'All apps are running',
+            })
           break
         }
         case 'alerts': {
