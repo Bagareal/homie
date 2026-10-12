@@ -77,7 +77,13 @@
       if (!Array.isArray(parsed?.groups) && !Array.isArray(parsed?.blocks)) {
         throw new Error('the file does not contain a Homie configuration')
       }
-      if (!confirm('The current configuration will be replaced by the one in the file. Continue?')) return
+      const ok = await app.confirm({
+        title: 'Import configuration',
+        message: 'The current configuration will be replaced by the one in the file. Continue?',
+        confirmLabel: 'Replace',
+        danger: true,
+      })
+      if (!ok) return
       await api.putConfig(parsed as Config)
       await app.load()
       title = app.config!.title

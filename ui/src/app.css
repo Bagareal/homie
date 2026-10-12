@@ -503,7 +503,8 @@ button.tape:hover {
   background: rgb(12 16 20 / 0.55);
 }
 
-.dialog form {
+.dialog form,
+.dialog .confirm-body {
   display: grid;
   gap: 14px;
   padding: 20px;
@@ -556,6 +557,20 @@ label.check {
 
 .dialog-actions .danger {
   margin-right: auto;
+}
+
+.dialog.confirm {
+  width: min(420px, calc(100vw - 32px));
+}
+
+.confirm-body p {
+  margin: 0;
+  color: var(--muted);
+}
+
+/* In a confirmation the danger button is the action itself, so it stays on the right. */
+.confirm .dialog-actions .danger {
+  margin-right: 0;
 }
 
 /* Settings */

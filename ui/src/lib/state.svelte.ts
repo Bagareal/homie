@@ -8,8 +8,12 @@ export function uid(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
 }
 
+export type Choice<T extends string = string> = { label: string; value: T; kind?: 'primary' | 'danger'; focus?: boolean }
+export type Ask = { title: string; message: string; buttons: Choice[]; resolve: (v: string | null) => void }
+
 class AppState {
   config = $state<Config | null>(null)
+  ask = $state.raw<Ask | null>(null)
   status = $state<Record<string, Status>>({})
   editing = $state(false)
   query = $state('')
@@ -45,6 +49,46 @@ class AppState {
     clearTimeout(this.#toastTimer)
     this.toast = { text, error, key: Date.now() }
     this.#toastTimer = setTimeout(() => (this.toast = null), error ? 6000 : 2200)
+  }
+
+  // In-app replacement for the browser's confirm(): resolves with the value of
+  // the clicked button, or null when dismissed (Esc).
+  choose<T extends string>(o: { title: string; message: string; buttons: Choice<T>[] }): Promise<T | null> {
+    this.ask?.resolve(null)
+    return new Promise((resolve) => {
+      this.ask = { ...o, resolve: resolve as (v: string | null) => void }
+    })
+  }
+
+  answer(value: string | null) {
+    const a = this.ask
+    this.ask = null
+    a?.resolve(value)
+  }
+
+  async confirm(o: { title: string; message: string; confirmLabel: string; danger?: boolean }): Promise<boolean> {
+    const r = await this.choose({
+      title: o.title,
+      message: o.message,
+      buttons: [
+        { label: 'Cancel', value: 'cancel', focus: true },
+        { label: o.confirmLabel, value: 'ok', kind: o.danger ? 'danger' : 'primary' },
+      ],
+    })
+    return r === 'ok'
+  }
+
+  async confirmUnsaved(what: string): Promise<'save' | 'discard' | 'keep'> {
+    const r = await this.choose({
+      title: 'Unsaved changes',
+      message: `Save your changes to this ${what} before closing?`,
+      buttons: [
+        { label: 'Keep editing', value: 'keep', focus: true },
+        { label: 'Discard', value: 'discard', kind: 'danger' },
+        { label: 'Save', value: 'save', kind: 'primary' },
+      ],
+    })
+    return r ?? 'keep'
   }
 
   group(id: string): Group | undefined {

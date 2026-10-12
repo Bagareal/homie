@@ -4,6 +4,7 @@
   import Dashboard from './components/Dashboard.svelte'
   import Settings from './components/Settings.svelte'
   import Toast from './components/Toast.svelte'
+  import ConfirmDialog from './components/ConfirmDialog.svelte'
 
   const routeFromHash = () => (location.hash === '#/settings' ? 'settings' : 'dashboard')
   let route = $state(routeFromHash())
@@ -73,6 +74,12 @@
   <Settings />
 {:else}
   <Dashboard />
+{/if}
+
+{#if app.ask}
+  {#key app.ask}
+    <ConfirmDialog ask={app.ask} />
+  {/key}
 {/if}
 
 <Toast />

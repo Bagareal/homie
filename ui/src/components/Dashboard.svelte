@@ -1,13 +1,40 @@
 <script lang="ts">
+  import { onMount } from 'svelte'
   import { app } from '../lib/state.svelte'
+  import { clearDraft, loadDraft, type ItemFields } from '../lib/draft'
   import type { Item } from '../lib/types'
   import Shelf from './Shelf.svelte'
   import ItemDialog from './ItemDialog.svelte'
   import GroupDialog from './GroupDialog.svelte'
 
-  let itemEdit = $state<{ groupId: string; item: Item | null } | null>(null)
-  let groupEdit = $state<{ id: string | null } | null>(null)
+  let itemEdit = $state<{ groupId: string; item: Item | null; draft?: ItemFields } | null>(null)
+  let groupEdit = $state<{ id: string | null; draft?: string } | null>(null)
   let search: HTMLInputElement | undefined = $state()
+
+  // A draft left behind by a refresh or a closed tab: offer to pick it back up.
+  onMount(async () => {
+    const d = loadDraft()
+    if (!d) return
+    const group = d.groupId ? app.group(d.groupId) : undefined
+    const item = d.kind === 'item' && d.itemId ? group?.items.find((x) => x.id === d.itemId) : undefined
+    const stale = d.kind === 'item' ? !group || (d.itemId !== null && !item) : d.groupId !== null && !group
+    if (stale) return clearDraft()
+
+    const label = d.kind === 'item' ? (d.fields.name || 'a service') : d.name || 'a group'
+    const choice = await app.choose({
+      title: 'Unsaved changes found',
+      message: `Your edits to “${label}” were not saved when the page was closed. Restore them?`,
+      buttons: [
+        { label: 'Discard', value: 'discard', kind: 'danger' },
+        { label: 'Restore', value: 'restore', kind: 'primary', focus: true },
+      ],
+    })
+    if (choice === 'discard') clearDraft()
+    else if (choice === 'restore') {
+      if (d.kind === 'item') itemEdit = { groupId: d.groupId, item: item ?? null, draft: d.fields }
+      else groupEdit = { id: d.groupId, draft: d.name }
+    }
+  })
 
   const cfg = $derived(app.config!)
   const q = $derived(app.query.trim().toLowerCase())
@@ -120,8 +147,8 @@
 </main>
 
 {#if itemEdit}
-  <ItemDialog groupId={itemEdit.groupId} item={itemEdit.item} onclose={() => (itemEdit = null)} />
+  <ItemDialog groupId={itemEdit.groupId} item={itemEdit.item} draft={itemEdit.draft} onclose={() => (itemEdit = null)} />
 {/if}
 {#if groupEdit}
-  <GroupDialog groupId={groupEdit.id} onclose={() => (groupEdit = null)} />
+  <GroupDialog groupId={groupEdit.id} draft={groupEdit.draft} onclose={() => (groupEdit = null)} />
 {/if}
