@@ -365,7 +365,7 @@ button.tape:hover {
   --card-pad: 16px;
   align-self: stretch;
   align-items: stretch;
-  width: calc(var(--row-width) + 2 * var(--card-pad) + 2px);
+  width: calc(var(--row-width) + 2 * var(--card-pad) + 2 * var(--group-border-w, 1px));
   padding: var(--card-pad);
   background: color-mix(in srgb, var(--card-color, var(--shelf)) calc(var(--card-opacity, 40) * 1%), transparent);
   border: var(--group-border-w, 1px) solid var(--group-border, color-mix(in srgb, var(--line) 60%, transparent));
