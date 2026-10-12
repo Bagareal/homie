@@ -151,3 +151,12 @@ GitHub Actions builds the interface and the binaries and creates the release wit
 | GET | `/api/widgets` | Latest readings of every widget (cached for half the refresh interval) |
 | POST | `/api/widgets/test` | Checks a Glances address from the editor |
 | GET | `/api/version` | Running version |
+
+## Credits
+
+Homie does not ship any icons. The icon picker and the icon names use two community collections, which Homie downloads from GitHub onto your own server when an icon is first shown:
+
+- [dashboard-icons](https://github.com/homarr-labs/dashboard-icons) by Homarr Labs and its contributors
+- [selfh.st/icons](https://github.com/selfhst/icons) by selfh.st
+
+The icons are the logos of the projects they depict and remain the property and trademarks of their respective owners; each collection has its own license, which applies to what you download from it.
