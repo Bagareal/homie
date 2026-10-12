@@ -36,6 +36,8 @@
       ['--tile', cfg.settings.tileColor],
       ['--accent', cfg.settings.accentColor],
       ['--card-color', cfg.settings.cardColor],
+      ['--tile-hover', cfg.settings.hoverColor],
+      ['--shelf', cfg.settings.panelColor],
     ]
     for (const [name, value] of vars) {
       if (value) root.style.setProperty(name, value)

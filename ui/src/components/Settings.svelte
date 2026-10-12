@@ -185,11 +185,13 @@
       <h2>Colors</h2>
       <ColorField label="Page background" cssVar="--bg" theme={s.theme} value={s.backgroundColor} onpreview={(v) => preview('backgroundColor', v)} oncommit={commit} />
       <ColorField label="Tile background" cssVar="--tile" theme={s.theme} value={s.tileColor} onpreview={(v) => preview('tileColor', v)} oncommit={commit} />
+      <ColorField label="Tile hover" cssVar="--tile-hover" theme={s.theme} value={s.hoverColor} onpreview={(v) => preview('hoverColor', v)} oncommit={commit} />
+      <ColorField label="Panels" cssVar="--shelf" theme={s.theme} value={s.panelColor} onpreview={(v) => preview('panelColor', v)} oncommit={commit} />
       <ColorField label="Accent" cssVar="--accent" theme={s.theme} value={s.accentColor} onpreview={(v) => preview('accentColor', v)} oncommit={commit} />
       {#if s.layout === 'grid'}
         <ColorField label="Group card" cssVar="--shelf" theme={s.theme} value={s.cardColor} onpreview={(v) => preview('cardColor', v)} oncommit={commit} />
       {/if}
-      <p class="hint">Pick a color or type its hex code, for example to copy one from another field. "Default" means the theme's own color (light or dark, depending on Theme above).</p>
+      <p class="hint">Tile hover is a tile's color under the pointer; Panels is the background of the settings sections and dialogs. Pick a color or type its hex code, for example to copy one from another field. "Default" means the theme's own color (light or dark, depending on Theme above).</p>
     </section>
 
     <section>

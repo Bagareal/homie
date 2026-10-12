@@ -30,6 +30,8 @@ export interface Settings {
   layout: Layout
   barOpacity: number
   cardColor?: string
+  hoverColor?: string
+  panelColor?: string
   cardOpacity: number
 }
 

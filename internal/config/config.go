@@ -42,7 +42,12 @@ type Settings struct {
 	BarOpacity int `json:"barOpacity,omitempty"`
 	// CardColor (#rrggbb; empty = theme default) and CardOpacity (1-100;
 	// 0 normalizes to the default) style the group cards of the grid layout.
-	CardColor   string `json:"cardColor,omitempty"`
+	CardColor string `json:"cardColor,omitempty"`
+	// HoverColor is a tile's color under the pointer; PanelColor is the
+	// background of panels (Settings sections, dialogs). Both #rrggbb, empty =
+	// theme default.
+	HoverColor  string `json:"hoverColor,omitempty"`
+	PanelColor  string `json:"panelColor,omitempty"`
 	CardOpacity int    `json:"cardOpacity,omitempty"`
 }
 
@@ -151,6 +156,8 @@ func (c Config) Validate() error {
 		"tile":       c.Settings.TileColor,
 		"accent":     c.Settings.AccentColor,
 		"card":       c.Settings.CardColor,
+		"hover":      c.Settings.HoverColor,
+		"panel":      c.Settings.PanelColor,
 	} {
 		if v != "" && !hexColor.MatchString(v) {
 			return fmt.Errorf("invalid %s color: must be in #rrggbb format", name)
