@@ -62,6 +62,12 @@ The Appearance section in Settings lets you customize:
 - a background image (JPEG or PNG) with its own opacity
 - the opacity of the top bar and, in the grid layout, of the group cards
 
+## Installing as an app (PWA)
+
+Homie can be installed like an app, with its own icon and a full-screen window. Browsers only allow this over **HTTPS**, so open it through a reverse proxy with a certificate (for example Nginx Proxy Manager) rather than `http://<ip>:8080`, then use "Install" in the browser menu (Chrome, Edge) or "Add to Home Screen" (Safari). On iPhone and iPad "Add to Home Screen" also works over plain HTTP.
+
+The service worker only caches the interface's build files. The dashboard and service status always come from the server, and if the server cannot be reached a short "unreachable" page is shown.
+
 ## Project structure
 
 ```

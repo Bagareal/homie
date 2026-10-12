@@ -219,6 +219,10 @@ func (s *Server) static(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Interface not built: run 'make ui' before building.", http.StatusInternalServerError)
 		return
 	}
+	if strings.HasSuffix(p, ".webmanifest") {
+		// Not in every system's MIME table, so set it explicitly.
+		w.Header().Set("Content-Type", "application/manifest+json")
+	}
 	if strings.HasPrefix(p, "assets/") {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	} else {
