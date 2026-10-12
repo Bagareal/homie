@@ -234,11 +234,26 @@ func widgetConfig() Config {
 
 func TestWidgetDefaultsAreFilledIn(t *testing.T) {
 	w := widgetConfig().Widgets[0]
-	if w.Kind != "glances" || w.Refresh != 5 || w.Width != 300 || w.Opacity != nil {
+	if w.Kind != "glances" || w.Refresh != 5 || w.Cols != 1 || w.HeightUnits != 1 || w.Precise == nil || !*w.Precise || w.Opacity != nil {
 		t.Fatalf("defaults not applied: %+v", w)
 	}
 	if err := widgetConfig().Validate(); err != nil {
 		t.Fatalf("a normalized widget should validate: %v", err)
+	}
+}
+
+func TestWidgetSizeKeepsWhatWasSaved(t *testing.T) {
+	// A widget from before sizes were counted in groups has a pixel height and no
+	// "precise" value: it stays precise. One that says precise:false keeps that.
+	c := widgetConfig()
+	if p := c.Widgets[0].Precise; p == nil || !*p {
+		t.Fatalf("a widget without the field should become precise, got %v", p)
+	}
+	no := false
+	c.Widgets[0].Precise = &no
+	c.normalize()
+	if *c.Widgets[0].Precise {
+		t.Error("an explicit precise:false was overwritten")
 	}
 }
 
@@ -256,7 +271,8 @@ func TestValidateRejectsBadWidgets(t *testing.T) {
 			}
 		},
 		"fast refresh": func(w *Widget) { w.Refresh = 1 },
-		"narrow":       func(w *Widget) { w.Width = 50 },
+		"too wide":     func(w *Widget) { w.Cols = 4 },
+		"too high":     func(w *Widget) { w.HeightUnits = 4 },
 		"tall":         func(w *Widget) { w.Height = 5000 },
 		"bad color":    func(w *Widget) { w.Color = "red" },
 		"thick border": func(w *Widget) { b := 9; w.BorderWidth = &b },

@@ -99,7 +99,10 @@ export interface Widget extends WidgetStyle {
   clearPassword?: boolean
   rows: Row[]
   refresh: number
-  width: number
+  // Size in groups: cols wide, heightUnits high; or, with precise, height in px (0 = fit the content).
+  cols: number
+  heightUnits: number
+  precise?: boolean
   height: number
 }
 

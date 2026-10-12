@@ -167,7 +167,7 @@ func (s *Server) testWidget(w http.ResponseWriter, r *http.Request) {
 		req.Kind = "glances"
 	}
 	probe := config.Widget{ID: "probe", Name: "probe", Kind: req.Kind, URL: strings.TrimSpace(req.URL), Rows: []config.Row{}}
-	probe.Refresh, probe.Width = 5, 300
+	probe.Refresh, probe.Cols, probe.HeightUnits = 5, 1, 1
 	if err := (config.Config{Settings: config.Default().Settings, Widgets: []config.Widget{probe}}).Validate(); err != nil {
 		msg := "enter a valid address, starting with http:// or https://"
 		if req.Kind == "truenas" {

@@ -2,6 +2,7 @@
   import { onMount, tick } from 'svelte'
   import { app } from '../lib/state.svelte'
   import { barHeight } from '../lib/barHeight'
+  import { cardWidth } from '../lib/widgetSize'
   import { mobile, setTab } from '../lib/mobile.svelte'
   import { clearDraft, loadDraft, type ItemFields } from '../lib/draft'
   import type { Item, Widget as WidgetT } from '../lib/types'
@@ -100,6 +101,7 @@
   // centered: as many columns as fit, never more than MAX_COLS, so a wide screen
   // keeps a compact block and a narrower one drops to two columns, then one.
   const MAX_COLS = 3
+  let cols = $state(MAX_COLS)
   $effect(() => {
     void [cfg.settings.layout, cfg.groups.length, cfg.widgets.length, app.query, app.editing]
     const el = main
@@ -110,16 +112,12 @@
       const cs = getComputedStyle(el)
       const gap = parseFloat(cs.columnGap) || 20
       const pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight)
-      const root = getComputedStyle(document.documentElement)
-      const tile = parseFloat(root.getPropertyValue('--tile-min')) || 120
-      const tileGap = parseFloat(root.getPropertyValue('--gap')) || 16
-      const border = parseFloat(root.getPropertyValue('--group-border-w')) || 1
-      // The size of a card: 3 tiles + padding (16 each side, as in app.css) + border.
       // Worked out, not measured, because a card on screen may already be squeezed.
-      const card = 3 * tile + 2 * tileGap + 2 * 16 + 2 * border
+      const card = cardWidth()
       const fits = Math.max(1, Math.floor((host.clientWidth - pad + gap) / (card + gap)))
-      const wanted = Math.max(1, visible.length + (cfg.widgets.length > 0 && !app.query ? 1 : 0))
-      const cols = Math.min(fits, wanted, MAX_COLS)
+      const widgets = app.query ? [] : cfg.widgets
+      const wanted = Math.max(1, visible.length + widgets.length, ...widgets.map((w) => w.cols))
+      cols = Math.min(fits, wanted, MAX_COLS)
       el.style.setProperty('--cols', String(cols))
       el.style.width = `${cols * card + (cols - 1) * gap + pad}px`
     }
@@ -222,7 +220,7 @@
           onEditGroup={() => (groupEdit = { id: b.v.group.id })}
         />
       {:else if b.kind === 'widget'}
-        <Widget widget={b.w} data={app.widgetData[b.w.id]} onedit={() => (widgetEdit = { id: b.w.id })} />
+        <Widget widget={b.w} span={Math.min(b.w.cols, cols)} data={app.widgetData[b.w.id]} onedit={() => (widgetEdit = { id: b.w.id })} />
       {:else}
         <div class="widgets">
           {#each b.list as w (w.id)}

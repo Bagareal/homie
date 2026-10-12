@@ -4,6 +4,7 @@
   import { bytes } from '../lib/format'
   import { app, uid } from '../lib/state.svelte'
   import { STYLE_KEYS } from '../lib/themes'
+  import { groupHeight, groupWidth } from '../lib/widgetSize'
   import type { HostData, Row, RowType, Widget, WidgetData, WidgetKind } from '../lib/types'
   import ColorField from './ColorField.svelte'
   import Slider from './Slider.svelte'
@@ -52,7 +53,9 @@
     username: '',
     rows: defaultRows('glances'),
     refresh: 5,
-    width: 300,
+    cols: 1,
+    heightUnits: 1,
+    precise: false,
     height: 0,
   }
   // Edited locally until saved; the password is never prefilled.
@@ -79,7 +82,10 @@
   // The preview is shrunk to fit its column when the widget is wider than it.
   let stageW = $state(0)
   let naturalH = $state(0)
-  const fit = $derived(stageW > 0 ? Math.min(1, (stageW - 30) / w.width) : 1)
+  // The size in pixels: counted in groups unless the height is set precisely.
+  const widthPx = $derived(groupWidth(w.cols))
+  const heightPx = $derived(w.precise ? w.height : groupHeight(w.heightUnits)) // 0 = fit the content
+  const fit = $derived(stageW > 0 ? Math.min(1, (stageW - 30) / widthPx) : 1)
 
   // The size tab draws the widget next to a group card of the real dashboard,
   // on a strip as wide as the page, all at the same scale.
@@ -93,7 +99,7 @@
       card: { w: shelf?.offsetWidth ?? 562, h: shelf?.offsetHeight ?? 200 },
     }
   })
-  const widgetH = $derived(w.height > 0 ? w.height : naturalH)
+  const widgetH = $derived(heightPx > 0 ? heightPx : naturalH)
   // The strip has 8 px of padding on each side; the rest stands for the page width.
   const scale = $derived(page.width > 0 ? Math.max(0, diagramW - 16) / page.width : 0)
 
@@ -323,8 +329,8 @@
 
     <div class="body">
       <aside class="stage" bind:clientWidth={stageW} aria-label="Preview">
-        <div class="scaler" style:width="{w.width * fit}px" style:height="{(w.height > 0 ? w.height : naturalH) * fit}px">
-          <div class="natural" bind:offsetHeight={naturalH} style:width="{w.width}px" style:transform="scale({fit})">
+        <div class="scaler" style:width="{widthPx * fit}px" style:height="{widgetH * fit}px">
+          <div class="natural" bind:offsetHeight={naturalH} style:width="{widthPx}px" style:transform="scale({fit})">
             <WidgetView widget={w} data={previewData} preview />
           </div>
         </div>
@@ -526,12 +532,28 @@
     </fieldset>
     {:else if tab === 'size'}
     <fieldset>
-      <Slider label="Width" unit="px" min={120} max={1200} value={w.width} oninput={(v) => (w.width = v)} oncommit={noop} />
-      <Slider label="Height (0 = fit content)" unit="px" min={0} max={1000} value={w.height} oninput={(v) => (w.height = v)} oncommit={noop} />
+      <Slider label="Width (groups)" unit="" min={1} max={3} value={w.cols} oninput={(v) => (w.cols = v)} oncommit={noop} />
+      {#if w.precise}
+        <Slider label="Height (0 = fit content)" unit="px" min={0} max={1000} value={w.height} oninput={(v) => (w.height = v)} oncommit={noop} />
+      {:else}
+        <Slider label="Height (groups)" unit="" min={1} max={3} value={w.heightUnits} oninput={(v) => (w.heightUnits = v)} oncommit={noop} />
+      {/if}
+      <label class="check" title="Set the height in pixels, for a widget that must not scroll or leave a gap">
+        <input
+          type="checkbox"
+          checked={w.precise}
+          onchange={(e) => {
+            w.precise = e.currentTarget.checked
+            // Start from the size it has now.
+            if (w.precise) w.height = Math.round(groupHeight(w.heightUnits))
+          }}
+        />
+        Precise height
+      </label>
       <div class="diagram" bind:clientWidth={diagramW} style:height="{Math.max(widgetH, page.card.h) * scale + 16}px" style:gap="{20 * scale}px" aria-hidden="true">
         <div
           class="d-widget"
-          style:width="{w.width * scale}px"
+          style:width="{widthPx * scale}px"
           style:height="{widgetH * scale}px"
           style:background="color-mix(in srgb, {w.color ?? 'var(--widget-color)'} {w.opacity ?? global.widgetOpacity ?? 100}%, transparent)"
           style:border="{Math.max(1, (w.borderWidth ?? global.widgetBorderWidth ?? global.tileBorderWidth ?? 1) * scale)}px solid {w.borderColor ?? 'var(--widget-border)'}"
@@ -539,7 +561,7 @@
         <div class="d-card" style:width="{page.card.w * scale}px" style:height="{page.card.h * scale}px">group card</div>
       </div>
       <small>
-        To scale, on a page {page.width} px wide: this widget is {w.width} × {widgetH} px, a group card {page.card.w} × {page.card.h} px.
+        To scale, on a page {page.width} px wide: this widget is {Math.round(widthPx)} × {Math.round(widgetH)} px, a group card {page.card.w} × {page.card.h} px.
         Drag the widget wherever you like on the dashboard while editing, even between two groups.
       </small>
     </fieldset>

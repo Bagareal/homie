@@ -8,11 +8,14 @@
     widget,
     data,
     onedit,
+    span,
     preview = false,
   }: {
     widget: Widget
     data: WidgetData | undefined
     onedit?: () => void
+    // Columns it takes in the grid layout (its width, cut down to the columns on screen).
+    span?: number
     // Rendered inside the editor: not draggable or clickable.
     preview?: boolean
   } = $props()
@@ -23,8 +26,13 @@
 
   const style = $derived(
     [
-      `--w-width:${widget.width}px`,
-      widget.height > 0 ? `--w-height:${widget.height}px` : '',
+      `--w-width:calc(${widget.cols} * var(--card-w) + ${widget.cols - 1} * 20px)`,
+      span ? `grid-column:span ${span}` : '',
+      widget.precise
+        ? widget.height > 0
+          ? `--w-height:${widget.height}px`
+          : ''
+        : `--w-height:calc(${widget.heightUnits} * var(--tile-min) + ${widget.heightUnits - 1} * var(--gap) + 32px + 2 * var(--group-border-w, 1px) + var(--card-head))`,
       // Only what this widget sets itself; the rest follows the global widget look.
       widget.color ? `--w-color:${widget.color}` : '',
       widget.opacity !== undefined ? `--w-opacity:${widget.opacity}` : '',

@@ -77,7 +77,7 @@
       type="number"
       {min}
       {max}
-      aria-label="{label} ({unit})"
+      aria-label={unit ? `${label} (${unit})` : label}
       onkeydown={(e) => {
         if (e.key === 'Enter') finishEdit(true)
         else if (e.key === 'Escape') finishEdit(false)

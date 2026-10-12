@@ -141,9 +141,14 @@ type Widget struct {
 	Rows []Row `json:"rows"`
 	// Refresh is how often the data is re-read, in seconds (2-300).
 	Refresh int `json:"refresh"`
-	// Width in px (120-1200); Height in px (0 = fit the content, up to 1000).
-	Width  int `json:"width"`
-	Height int `json:"height"`
+	// Size, counted in groups: Cols is the width (1-3 group columns) and
+	// HeightUnits the height (1-3 rows of tiles). With Precise the height is Height
+	// in px instead (0 = fit the content, up to 1000). Precise is a pointer so a
+	// widget saved before these existed (no value) keeps its pixel height.
+	Cols        int   `json:"cols"`
+	HeightUnits int   `json:"heightUnits"`
+	Precise     *bool `json:"precise,omitempty"`
+	Height      int   `json:"height"`
 	// Appearance overrides (flat in the JSON); unset = the global widget look.
 	WidgetStyle
 
@@ -265,8 +270,15 @@ func (c *Config) normalize() {
 		if w.Refresh == 0 {
 			w.Refresh = 5
 		}
-		if w.Width == 0 {
-			w.Width = 300
+		if w.Cols == 0 {
+			w.Cols = 1
+		}
+		if w.HeightUnits == 0 {
+			w.HeightUnits = 1
+		}
+		if w.Precise == nil {
+			legacy := true
+			w.Precise = &legacy
 		}
 		w.HasPassword = false
 		migrateWidget(w)
@@ -574,8 +586,11 @@ func (c Config) validateWidgets(seen map[string]bool) error {
 		if w.Refresh < 2 || w.Refresh > 300 {
 			return fmt.Errorf("widget %q: the refresh interval must be between 2 and 300 seconds", w.Name)
 		}
-		if w.Width < 120 || w.Width > 1200 {
-			return fmt.Errorf("widget %q: the width must be between 120 and 1200 px", w.Name)
+		if w.Cols < 1 || w.Cols > 3 {
+			return fmt.Errorf("widget %q: the width must be 1, 2 or 3 groups", w.Name)
+		}
+		if w.HeightUnits < 1 || w.HeightUnits > 3 {
+			return fmt.Errorf("widget %q: the height must be 1, 2 or 3 groups", w.Name)
 		}
 		if w.Height < 0 || w.Height > 1000 {
 			return fmt.Errorf("widget %q: the height must be between 0 and 1000 px", w.Name)

@@ -24,6 +24,10 @@
   --icon: 56px;
   --gap: 16px;
   --row-tiles: 4;
+  /* A group card (three tiles, padding, border) and the title above its tiles: the
+     unit widgets are sized in. Keep in step with lib/widgetSize.ts. */
+  --card-w: calc(3 * var(--tile-min) + 2 * var(--gap) + 32px + 2 * var(--group-border-w, 1px));
+  --card-head: calc(0.85rem * 1.2 + 10px);
   --row-width: calc(var(--row-tiles) * var(--tile-min) + (var(--row-tiles) - 1) * var(--gap));
 }
 

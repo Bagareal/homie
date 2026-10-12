@@ -127,7 +127,7 @@ func putWidget(t *testing.T, s *Server, glancesURL, password string) {
 	cfg := s.store.Get().Redacted()
 	cfg.Widgets = []config.Widget{{
 		ID: "w1", Name: "Proxmox", URL: glancesURL, Username: "glances", Password: password,
-		Rows: []config.Row{{ID: "r1", Type: "cpu", Load: true}}, Refresh: 5, Width: 300,
+		Rows: []config.Row{{ID: "r1", Type: "cpu", Load: true}}, Refresh: 5, Cols: 1, HeightUnits: 1,
 	}}
 	if w := doJSON(t, s.Handler(), "PUT", "/api/config", cfg); w.Code != http.StatusOK {
 		t.Fatalf("put widget: %d %s", w.Code, w.Body.String())
