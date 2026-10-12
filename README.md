@@ -39,9 +39,11 @@ The configuration can also be exported and imported from the Settings page. A PB
 
 ## Icons
 
-In a service's Icon field you can enter:
+In a service's edit dialog, **Search icons** opens a picker with the whole [dashboard-icons](https://github.com/homarr-labs/dashboard-icons) collection (searchable by name, alias, and category, with the light/dark variants listed separately); click one to fill the field. The browser needs to reach `cdn.jsdelivr.net` for this.
 
-- the name of an icon from the [dashboard-icons](https://github.com/homarr-labs/dashboard-icons) collection, for example `proxmox`, `truenas-scale`, `adguard-home`, `jellyfin`
+You can also type in the Icon field:
+
+- the name of an icon from the [dashboard-icons](https://github.com/homarr-labs/dashboard-icons) collection, for example `proxmox`, `truenas-scale`, `adguard-home`, `jellyfin` (icons that only exist as SVG or WebP are found automatically, or can be written as `name.svg`)
 - the full address of an image
 - a file placed in `/var/lib/homie/icons/`, for example `/icons/router.png`
 - an emoji or a single character

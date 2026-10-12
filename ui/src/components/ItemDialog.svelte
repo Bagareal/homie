@@ -4,6 +4,7 @@
   import { clearDraft, saveDraft, type ItemFields } from '../lib/draft'
   import type { Item } from '../lib/types'
   import Icon from './Icon.svelte'
+  import IconPicker from './IconPicker.svelte'
 
   let {
     groupId,
@@ -34,6 +35,7 @@
   let check = $state(start.check)
   let target = $state(start.target)
   let error = $state('')
+  let picking = $state(false)
 
   const dirty = $derived(
     name !== initial.name ||
@@ -140,7 +142,8 @@
         <input bind:value={icon} placeholder="proxmox" maxlength="500" />
         <Icon {icon} name={name || '?'} />
       </span>
-      <small>Name from the dashboard-icons collection (e.g. proxmox, truenas-scale, adguard-home), an image address, a file in /icons/, or an emoji.</small>
+      <button type="button" class="search-icons" onclick={() => (picking = true)}>Search icons</button>
+      <small>Pick one with “Search icons”, or enter a name from the dashboard-icons collection (e.g. proxmox, truenas-scale), an image address, a file in /icons/, or an emoji.</small>
     </label>
 
     <label>
@@ -170,4 +173,21 @@
       <button type="submit" class="primary">{item ? 'Save changes' : 'Add service'}</button>
     </div>
   </form>
+
+  {#if picking}
+    <IconPicker
+      current={icon.trim()}
+      onpick={(value) => {
+        icon = value
+        picking = false
+      }}
+      onclose={() => (picking = false)}
+    />
+  {/if}
 </dialog>
+
+<style>
+  .search-icons {
+    justify-self: start;
+  }
+</style>
