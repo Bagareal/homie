@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sync"
 )
 
@@ -76,10 +77,68 @@ type Group struct {
 	Items []Item `json:"items"`
 }
 
+// Widget is a standalone block that shows live data from a monitored host.
+// It sits beside the groups, not inside one.
+type Widget struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Kind is the data source; only "glances" exists so far.
+	Kind     string `json:"kind"`
+	URL      string `json:"url"`
+	Username string `json:"username,omitempty"`
+	// Password is write-only: it is stored here but never sent to the browser
+	// (see Redacted). An empty value on save keeps the stored one.
+	Password string `json:"password,omitempty"`
+	// HasPassword is output-only, set by Redacted so the editor can tell a
+	// password exists. Whatever a client sends is discarded.
+	HasPassword bool `json:"hasPassword,omitempty"`
+	// ClearPassword is input-only: it asks Set to forget the stored password.
+	ClearPassword bool `json:"clearPassword,omitempty"`
+	// Metrics are the values to show, in display order (see glances.Metrics).
+	Metrics []string `json:"metrics"`
+	// Mounts and Interfaces narrow the disks and network cards shown; empty = all.
+	Mounts     []string `json:"mounts,omitempty"`
+	Interfaces []string `json:"interfaces,omitempty"`
+	// Refresh is how often the data is re-read, in seconds (2-300).
+	Refresh int `json:"refresh"`
+	// Placement is "top" (above the groups) or "bottom" (below them).
+	Placement string `json:"placement"`
+	// Width in px (120-1200); Height in px (0 = fit the content, up to 1000).
+	Width  int `json:"width"`
+	Height int `json:"height"`
+	// Appearance. Colors are #rrggbb[aa]; empty = theme default.
+	Color       string `json:"color,omitempty"`
+	TextColor   string `json:"textColor,omitempty"`
+	BorderColor string `json:"borderColor,omitempty"`
+	BarColor    string `json:"barColor,omitempty"`
+	// Opacity (1-100) of the background; BorderWidth in px (0-8, nil = 1).
+	Opacity     int  `json:"opacity"`
+	BorderWidth *int `json:"borderWidth,omitempty"`
+}
+
+const maxWidgets = 20
+
+// WidgetMetrics lists the values a widget can show.
+var WidgetMetrics = []string{"cpu", "mem", "swap", "load", "uptime", "temp", "disks", "network"}
+
 type Config struct {
 	Title    string   `json:"title"`
 	Settings Settings `json:"settings"`
 	Groups   []Group  `json:"groups"`
+	Widgets  []Widget `json:"widgets"`
+}
+
+// Redacted returns a copy that is safe to send to the browser: widget
+// passwords are replaced by the HasPassword flag.
+func (c Config) Redacted() Config {
+	c.Widgets = append(make([]Widget, 0, len(c.Widgets)), c.Widgets...)
+	for i := range c.Widgets {
+		w := &c.Widgets[i]
+		w.HasPassword = w.Password != ""
+		w.Password = ""
+		w.ClearPassword = false
+	}
+	return c
 }
 
 func Default() Config {
@@ -95,7 +154,8 @@ func Default() Config {
 			BarOpacity:        100,
 			CardOpacity:       40,
 		},
-		Groups: []Group{},
+		Groups:  []Group{},
+		Widgets: []Widget{},
 	}
 }
 
@@ -130,6 +190,30 @@ func (c *Config) normalize() {
 		if c.Groups[i].Items == nil {
 			c.Groups[i].Items = []Item{}
 		}
+	}
+	// A copy, so editing a widget never touches a slice shared with Get().
+	c.Widgets = append(make([]Widget, 0, len(c.Widgets)), c.Widgets...)
+	for i := range c.Widgets {
+		w := &c.Widgets[i]
+		if w.Kind == "" {
+			w.Kind = "glances"
+		}
+		if w.Refresh == 0 {
+			w.Refresh = 5
+		}
+		if w.Placement == "" {
+			w.Placement = "top"
+		}
+		if w.Width == 0 {
+			w.Width = 300
+		}
+		if w.Opacity == 0 {
+			w.Opacity = 100
+		}
+		if w.Metrics == nil {
+			w.Metrics = []string{}
+		}
+		w.HasPassword = false
 	}
 }
 
@@ -213,6 +297,75 @@ func (c Config) Validate() error {
 			u, err := url.Parse(it.URL)
 			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 				return fmt.Errorf("invalid address for %q: must start with http:// or https://", it.Name)
+			}
+		}
+	}
+	return c.validateWidgets(seen)
+}
+
+func (c Config) validateWidgets(seen map[string]bool) error {
+	if len(c.Widgets) > maxWidgets {
+		return fmt.Errorf("too many widgets (%d max)", maxWidgets)
+	}
+	for _, w := range c.Widgets {
+		if w.ID == "" || seen[w.ID] {
+			return fmt.Errorf("widget %q has a missing or duplicate id", w.Name)
+		}
+		seen[w.ID] = true
+		if w.Name == "" || len(w.Name) > 60 {
+			return errors.New("every widget needs a name (60 characters max)")
+		}
+		if w.Kind != "glances" {
+			return fmt.Errorf("invalid kind for widget %q: %q", w.Name, w.Kind)
+		}
+		u, err := url.Parse(w.URL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || len(w.URL) > 300 {
+			return fmt.Errorf("invalid address for widget %q: must start with http:// or https://", w.Name)
+		}
+		if len(w.Username) > 100 || len(w.Password) > 200 {
+			return fmt.Errorf("username or password of widget %q is too long", w.Name)
+		}
+		if len(w.Metrics) > len(WidgetMetrics) {
+			return fmt.Errorf("widget %q lists too many metrics", w.Name)
+		}
+		picked := map[string]bool{}
+		for _, m := range w.Metrics {
+			if !slices.Contains(WidgetMetrics, m) || picked[m] {
+				return fmt.Errorf("widget %q has an unknown or repeated metric: %q", w.Name, m)
+			}
+			picked[m] = true
+		}
+		for _, list := range [][]string{w.Mounts, w.Interfaces} {
+			if len(list) > 20 {
+				return fmt.Errorf("widget %q has too many disk or network filters", w.Name)
+			}
+			for _, s := range list {
+				if s == "" || len(s) > 200 {
+					return fmt.Errorf("widget %q has an invalid disk or network filter", w.Name)
+				}
+			}
+		}
+		if w.Refresh < 2 || w.Refresh > 300 {
+			return fmt.Errorf("widget %q: the refresh interval must be between 2 and 300 seconds", w.Name)
+		}
+		if w.Placement != "top" && w.Placement != "bottom" {
+			return fmt.Errorf("invalid placement for widget %q: %q", w.Name, w.Placement)
+		}
+		if w.Width < 120 || w.Width > 1200 {
+			return fmt.Errorf("widget %q: the width must be between 120 and 1200 px", w.Name)
+		}
+		if w.Height < 0 || w.Height > 1000 {
+			return fmt.Errorf("widget %q: the height must be between 0 and 1000 px", w.Name)
+		}
+		if w.Opacity < 1 || w.Opacity > 100 {
+			return fmt.Errorf("widget %q: the opacity must be between 1 and 100", w.Name)
+		}
+		if w.BorderWidth != nil && (*w.BorderWidth < 0 || *w.BorderWidth > 8) {
+			return fmt.Errorf("widget %q: the border width must be between 0 and 8", w.Name)
+		}
+		for name, v := range map[string]string{"background": w.Color, "text": w.TextColor, "border": w.BorderColor, "bar": w.BarColor} {
+			if v != "" && !hexColor.MatchString(v) {
+				return fmt.Errorf("widget %q: invalid %s color, must be in #rrggbb or #rrggbbaa format", w.Name, name)
 			}
 		}
 	}
@@ -320,11 +473,36 @@ func (s *Store) Set(c Config) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	c.keepPasswords(s.cfg)
 	if err := s.write(c); err != nil {
 		return err
 	}
 	s.cfg = c
 	return nil
+}
+
+// keepPasswords carries stored widget passwords over to a configuration that
+// came from the browser, which never sees them: a widget saved with an empty
+// password keeps the one it had, unless it asked to clear it. The stored
+// password is only carried over while the address and username are unchanged:
+// otherwise anyone who can open Homie could aim a widget at a server of their
+// own and collect the credentials it sends.
+func (c *Config) keepPasswords(old Config) {
+	for i := range c.Widgets {
+		w := &c.Widgets[i]
+		if w.Password == "" && !w.ClearPassword {
+			for _, o := range old.Widgets {
+				if o.ID == w.ID && o.URL == w.URL && o.Username == w.Username {
+					w.Password = o.Password
+					break
+				}
+			}
+		}
+		if w.ClearPassword {
+			w.Password = ""
+		}
+		w.ClearPassword = false
+	}
 }
 
 // write saves atomically: temp file, then rename.

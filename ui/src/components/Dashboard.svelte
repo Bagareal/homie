@@ -3,13 +3,16 @@
   import { app } from '../lib/state.svelte'
   import { barHeight } from '../lib/barHeight'
   import { clearDraft, loadDraft, type ItemFields } from '../lib/draft'
-  import type { Item } from '../lib/types'
+  import type { Item, Placement } from '../lib/types'
   import Shelf from './Shelf.svelte'
+  import Widget from './Widget.svelte'
+  import WidgetDialog from './WidgetDialog.svelte'
   import ItemDialog from './ItemDialog.svelte'
   import GroupDialog from './GroupDialog.svelte'
 
   let itemEdit = $state<{ groupId: string; item: Item | null; draft?: ItemFields } | null>(null)
   let groupEdit = $state<{ id: string | null; draft?: string } | null>(null)
+  let widgetEdit = $state<{ id: string | null } | null>(null)
   let search: HTMLInputElement | undefined = $state()
 
   // A draft left behind by a refresh or a closed tab: offer to pick it back up.
@@ -64,7 +67,7 @@
   const anyDown = $derived(summary.includes('unreachable'))
 
   function onWindowKey(e: KeyboardEvent) {
-    if (app.editing || itemEdit || groupEdit) return
+    if (app.editing || itemEdit || groupEdit || widgetEdit) return
     const t = e.target as HTMLElement
     if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName)) {
       e.preventDefault()
@@ -113,11 +116,23 @@
 </header>
 
 <div class="scroller">
-{#if app.editing && cfg.groups.length > 0}
-  <p class="edit-hint">Drag tiles and group labels to reorder them. Click an item to edit it.</p>
+{#if app.editing && (cfg.groups.length > 0 || cfg.widgets.length > 0)}
+  <p class="edit-hint">Drag tiles, group labels and widgets to reorder them. Click an item to edit it.</p>
 {/if}
 
+{#snippet widgets(placement: Placement)}
+  {@const list = cfg.widgets.filter((w) => w.placement === placement)}
+  {#if list.length > 0 && !q}
+    <div class="widgets">
+      {#each list as w (w.id)}
+        <Widget widget={w} data={app.widgetData[w.id]} onedit={() => (widgetEdit = { id: w.id })} />
+      {/each}
+    </div>
+  {/if}
+{/snippet}
+
 <main class="shelves" class:editing={app.editing}>
+  {@render widgets('top')}
   {#if cfg.groups.length === 0}
     <div class="empty">
       <p>The dashboard is empty. Create a group, then add your services to it.</p>
@@ -143,14 +158,25 @@
       />
     {/each}
   {/if}
-  {#if app.editing && cfg.groups.length > 0}
-    <button type="button" class="add-group" onclick={() => (groupEdit = { id: null })}>Add group</button>
+  {@render widgets('bottom')}
+  {#if app.editing}
+    <div class="add-row">
+      {#if cfg.groups.length > 0}
+        <button type="button" class="add-group" onclick={() => (groupEdit = { id: null })}>Add group</button>
+      {/if}
+      <button type="button" class="add-group" onclick={() => (widgetEdit = { id: null })}>Add widget</button>
+    </div>
   {/if}
 </main>
 </div>
 
 {#if itemEdit}
   <ItemDialog groupId={itemEdit.groupId} item={itemEdit.item} draft={itemEdit.draft} onclose={() => (itemEdit = null)} />
+{/if}
+{#if widgetEdit}
+  {#key widgetEdit}
+    <WidgetDialog widgetId={widgetEdit.id} onclose={() => (widgetEdit = null)} />
+  {/key}
 {/if}
 {#if groupEdit}
   <GroupDialog groupId={groupEdit.id} draft={groupEdit.draft} onclose={() => (groupEdit = null)} />

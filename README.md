@@ -54,6 +54,21 @@ If the field is empty or the icon fails to load, the tile shows the service's in
 
 The backend periodically runs an active check on each service (interval set in Settings). A service is online if it responds with an HTTP status code below 500: even a login page (401, 403, or a redirect) counts as online, while a 502 or 503 from a reverse proxy with no backend does not. Self-signed certificates are accepted.
 
+## Widgets
+
+A widget is a standalone block, separate from the groups, that shows live data from a host running [Glances](https://nicolargo.github.io/glances/). Use **Edit → Add widget**, give it a name and choose what to show: CPU, memory, swap, load average, uptime, temperature (the hottest sensor), disks and network traffic. You choose the width and height, whether it sits above or below the groups, and its colors (background with opacity, text, border, bars). Widgets can be dragged to reorder them while editing.
+
+On the host, start Glances in web server mode (it listens on port 61208):
+
+```bash
+apt install glances          # or: pipx install glances
+glances -w                   # add --password to require one (basic authentication)
+```
+
+Homie's server reads the Glances REST API (versions 4 and 3), so the browser never talks to the host and plain-http hosts work behind an HTTPS proxy. Use "Test connection" in the editor to check the address.
+
+A password is stored only on the server: it is never sent back to the browser and is not included in exported backups. Changing the address or username removes it. Glances' basic authentication travels unencrypted over http, so use it on a trusted network.
+
 ## Appearance
 
 The Appearance section in Settings lets you customize:
@@ -76,6 +91,7 @@ The service worker only caches the interface's build files. The dashboard and se
 cmd/homie/              program entry point
 internal/config/        data model, validation, persistence
 internal/status/        periodic service checks
+internal/glances/       reads host metrics from the Glances API (widgets)
 internal/server/        HTTP API and pages
 internal/webui/         compiled interface, embedded in the binary
 ui/                     interface (Svelte 5, TypeScript, Vite)
@@ -112,4 +128,6 @@ GitHub Actions builds the interface and the binaries and creates the release wit
 | GET | `/api/config` | Full configuration |
 | PUT | `/api/config` | Replaces the configuration (validated) |
 | GET | `/api/status` | Latest status of every checked service |
+| GET | `/api/widgets` | Latest readings of every widget (cached for half the refresh interval) |
+| POST | `/api/widgets/test` | Checks a Glances address from the editor |
 | GET | `/api/version` | Running version |

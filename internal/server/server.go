@@ -41,10 +41,11 @@ type Server struct {
 	ui      fs.FS
 	dataDir string
 	version string
+	widgets *widgetCache
 }
 
 func New(store *config.Store, checker *status.Checker, ui fs.FS, dataDir, version string) *Server {
-	return &Server{store: store, checker: checker, ui: ui, dataDir: dataDir, version: version}
+	return &Server{store: store, checker: checker, ui: ui, dataDir: dataDir, version: version, widgets: newWidgetCache()}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -52,6 +53,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/config", s.getConfig)
 	mux.HandleFunc("PUT /api/config", s.putConfig)
 	mux.HandleFunc("GET /api/status", s.getStatus)
+	mux.HandleFunc("GET /api/widgets", s.getWidgets)
+	mux.HandleFunc("POST /api/widgets/test", s.testWidget)
 	mux.HandleFunc("GET /api/version", s.getVersion)
 	mux.HandleFunc("GET /icons/{name}", s.icon)
 	mux.HandleFunc("POST /api/background", s.uploadBackground)
@@ -73,7 +76,7 @@ func writeError(w http.ResponseWriter, code int, msg string) {
 }
 
 func (s *Server) getConfig(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, s.store.Get())
+	writeJSON(w, http.StatusOK, s.store.Get().Redacted())
 }
 
 func (s *Server) putConfig(w http.ResponseWriter, r *http.Request) {
@@ -97,7 +100,7 @@ func (s *Server) putConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.checker.Wake()
-	writeJSON(w, http.StatusOK, s.store.Get())
+	writeJSON(w, http.StatusOK, s.store.Get().Redacted())
 }
 
 func (s *Server) getStatus(w http.ResponseWriter, _ *http.Request) {
@@ -175,14 +178,14 @@ func (s *Server) uploadBackground(w http.ResponseWriter, r *http.Request) {
 	if old != "" && old != name {
 		os.Remove(filepath.Join(dir, old))
 	}
-	writeJSON(w, http.StatusOK, s.store.Get())
+	writeJSON(w, http.StatusOK, s.store.Get().Redacted())
 }
 
 func (s *Server) deleteBackground(w http.ResponseWriter, _ *http.Request) {
 	c := s.store.Get()
 	old := c.Settings.BackgroundImage
 	if old == "" {
-		writeJSON(w, http.StatusOK, c)
+		writeJSON(w, http.StatusOK, c.Redacted())
 		return
 	}
 	c.Settings.BackgroundImage = ""
@@ -191,7 +194,7 @@ func (s *Server) deleteBackground(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	os.Remove(filepath.Join(s.dataDir, "backgrounds", old))
-	writeJSON(w, http.StatusOK, s.store.Get())
+	writeJSON(w, http.StatusOK, s.store.Get().Redacted())
 }
 
 // background serves the uploaded background image from <data>/backgrounds.

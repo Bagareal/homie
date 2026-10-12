@@ -65,6 +65,24 @@
     }
   })
 
+  // Widgets are re-read as often as the quickest one asks, and not at all
+  // while the page is hidden or on the Settings page.
+  $effect(() => {
+    const widgets = app.config?.widgets
+    if (route !== 'dashboard' || !widgets?.length) return
+    const secs = Math.min(...widgets.map((w) => w.refresh || 5))
+    const tick = () => {
+      if (!document.hidden) app.refreshWidgets()
+    }
+    tick()
+    const t = setInterval(tick, secs * 1000)
+    document.addEventListener('visibilitychange', tick)
+    return () => {
+      clearInterval(t)
+      document.removeEventListener('visibilitychange', tick)
+    }
+  })
+
   // The backend computes status; here it's just re-read.
   $effect(() => {
     const interval = app.config?.settings.checkInterval

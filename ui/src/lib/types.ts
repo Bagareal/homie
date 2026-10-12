@@ -42,10 +42,62 @@ export interface Settings {
   cardOpacity: number
 }
 
+export type WidgetMetric = 'cpu' | 'mem' | 'swap' | 'load' | 'uptime' | 'temp' | 'disks' | 'network'
+export type Placement = 'top' | 'bottom'
+
+export interface Widget {
+  id: string
+  name: string
+  kind: 'glances'
+  url: string
+  username?: string
+  // Write-only: the server never sends it back, only hasPassword.
+  password?: string
+  hasPassword?: boolean
+  clearPassword?: boolean
+  metrics: WidgetMetric[]
+  mounts?: string[]
+  interfaces?: string[]
+  refresh: number
+  placement: Placement
+  width: number
+  height: number
+  color?: string
+  textColor?: string
+  borderColor?: string
+  barColor?: string
+  opacity: number
+  borderWidth?: number
+}
+
 export interface Config {
   title: string
   settings: Settings
   groups: Group[]
+  widgets: Widget[]
+}
+
+export interface Usage {
+  percent: number
+  used: number
+  total: number
+}
+
+export interface WidgetData {
+  online: boolean
+  error?: string
+  updatedAt: string
+  failed?: WidgetMetric[]
+  data: {
+    cpu?: number
+    mem?: Usage
+    swap?: Usage
+    load?: { min1: number; min5: number; min15: number; cores: number }
+    uptime?: string
+    temp?: { label: string; value: number }
+    disks?: (Usage & { mount: string })[]
+    network?: { rx: number; tx: number }
+  }
 }
 
 export interface Status {

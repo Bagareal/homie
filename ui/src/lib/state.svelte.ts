@@ -1,7 +1,7 @@
 import * as api from './api'
-import type { Config, Group, Item, Status } from './types'
+import type { Config, Group, Item, Status, Widget, WidgetData } from './types'
 
-export type DragData = { kind: 'item'; id: string; groupId: string } | { kind: 'group'; id: string }
+export type DragData = { kind: 'item'; id: string; groupId: string } | { kind: 'group'; id: string } | { kind: 'widget'; id: string }
 
 // crypto.randomUUID requires HTTPS: not available on a plain-http LAN.
 export function uid(): string {
@@ -15,6 +15,7 @@ class AppState {
   config = $state<Config | null>(null)
   ask = $state.raw<Ask | null>(null)
   status = $state<Record<string, Status>>({})
+  widgetData = $state<Record<string, WidgetData>>({})
   editing = $state(false)
   query = $state('')
   drag = $state<DragData | null>(null)
@@ -22,13 +23,14 @@ class AppState {
   #toastTimer: ReturnType<typeof setTimeout> | undefined
 
   async load() {
-    this.config = await api.getConfig()
+    this.config = withWidgets(await api.getConfig())
   }
 
   async save(message = 'Changes saved') {
     if (!this.config) return
     try {
       await api.putConfig($state.snapshot(this.config) as Config)
+      this.forgetPasswords()
       this.notify(message)
     } catch (e) {
       this.notify(`Save failed: ${(e as Error).message}`, true)
@@ -42,6 +44,24 @@ class AppState {
       this.status = await api.getStatus()
     } catch {
       // Next tick retries.
+    }
+  }
+
+  async refreshWidgets() {
+    try {
+      this.widgetData = await api.getWidgets()
+    } catch {
+      // Next tick retries.
+    }
+  }
+
+  // Passwords go to the server once and are not kept in the page afterwards.
+  forgetPasswords() {
+    for (const w of this.config?.widgets ?? []) {
+      if (w.password) w.hasPassword = true
+      else if (w.clearPassword) w.hasPassword = false
+      w.password = ''
+      w.clearPassword = false
     }
   }
 
@@ -146,6 +166,37 @@ class AppState {
     this.save('Service deleted')
   }
 
+  widget(id: string): Widget | undefined {
+    return this.config?.widgets.find((w) => w.id === id)
+  }
+
+  upsertWidget(data: Widget) {
+    if (!this.config) return
+    const i = this.config.widgets.findIndex((w) => w.id === data.id)
+    if (i >= 0) this.config.widgets[i] = data
+    else this.config.widgets.push(data)
+    this.save().then(() => this.refreshWidgets())
+  }
+
+  deleteWidget(id: string) {
+    if (!this.config) return
+    this.config.widgets = this.config.widgets.filter((w) => w.id !== id)
+    this.save('Widget deleted')
+  }
+
+  moveWidget(widgetId: string, targetId: string, after: boolean) {
+    const list = this.config?.widgets
+    if (!list || widgetId === targetId) return
+    const before = list.map((w) => w.id).join()
+    const i = list.findIndex((w) => w.id === widgetId)
+    if (i < 0) return
+    const [w] = list.splice(i, 1)
+    let j = list.findIndex((x) => x.id === targetId)
+    j = j < 0 ? list.length : j + (after ? 1 : 0)
+    list.splice(j, 0, w)
+    if (list.map((x) => x.id).join() !== before) this.save('Order updated')
+  }
+
   upsertGroup(id: string | null, name: string) {
     if (!this.config) return
     const g = id ? this.group(id) : undefined
@@ -162,6 +213,12 @@ class AppState {
     this.config.groups = this.config.groups.filter((g) => g.id !== id)
     this.save('Group deleted')
   }
+}
+
+// Older servers and imports may omit the list.
+function withWidgets(cfg: Config): Config {
+  cfg.widgets ??= []
+  return cfg
 }
 
 function order(cfg: Config): string {

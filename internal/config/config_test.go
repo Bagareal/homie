@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -218,5 +219,146 @@ func TestValidateColorAcceptsOptionalAlpha(t *testing.T) {
 		if err := c.Validate(); (err == nil) != ok {
 			t.Errorf("accent %q: valid=%v, got err=%v", color, ok, err)
 		}
+	}
+}
+
+func widgetConfig() Config {
+	c := baseConfig()
+	c.Widgets = []Widget{{
+		ID: "w1", Name: "Proxmox", URL: "http://pve.local:61208",
+		Metrics: []string{"cpu", "mem", "disks"},
+	}}
+	c.normalize()
+	return c
+}
+
+func TestWidgetDefaultsAreFilledIn(t *testing.T) {
+	w := widgetConfig().Widgets[0]
+	if w.Kind != "glances" || w.Refresh != 5 || w.Placement != "top" || w.Width != 300 || w.Opacity != 100 {
+		t.Fatalf("defaults not applied: %+v", w)
+	}
+	if err := widgetConfig().Validate(); err != nil {
+		t.Fatalf("a normalized widget should validate: %v", err)
+	}
+}
+
+func TestValidateRejectsBadWidgets(t *testing.T) {
+	for name, mutate := range map[string]func(w *Widget){
+		"no name":         func(w *Widget) { w.Name = "" },
+		"bad scheme":      func(w *Widget) { w.URL = "ftp://pve" },
+		"unknown metric":  func(w *Widget) { w.Metrics = []string{"gpu"} },
+		"repeated metric": func(w *Widget) { w.Metrics = []string{"cpu", "cpu"} },
+		"fast refresh":    func(w *Widget) { w.Refresh = 1 },
+		"bad placement":   func(w *Widget) { w.Placement = "left" },
+		"narrow":          func(w *Widget) { w.Width = 50 },
+		"tall":            func(w *Widget) { w.Height = 5000 },
+		"bad color":       func(w *Widget) { w.Color = "red" },
+		"thick border":    func(w *Widget) { b := 9; w.BorderWidth = &b },
+		"empty filter":    func(w *Widget) { w.Mounts = []string{""} },
+		"unknown kind":    func(w *Widget) { w.Kind = "zabbix" },
+	} {
+		c := widgetConfig()
+		mutate(&c.Widgets[0])
+		if err := c.Validate(); err == nil {
+			t.Errorf("%s: expected an error", name)
+		}
+	}
+	c := widgetConfig()
+	c.Widgets = append(c.Widgets, c.Widgets[0])
+	if err := c.Validate(); err == nil {
+		t.Error("a duplicate widget id should be rejected")
+	}
+}
+
+func TestRedactedHidesPasswords(t *testing.T) {
+	c := widgetConfig()
+	c.Widgets[0].Password = "s3cret"
+	r := c.Redacted()
+	if r.Widgets[0].Password != "" || !r.Widgets[0].HasPassword {
+		t.Fatalf("redacted widget = %+v", r.Widgets[0])
+	}
+	if c.Widgets[0].Password != "s3cret" {
+		t.Fatal("Redacted must not modify the original")
+	}
+	raw, _ := json.Marshal(r)
+	if strings.Contains(string(raw), "s3cret") {
+		t.Fatal("password present in the JSON sent to the browser")
+	}
+}
+
+func TestStoreKeepsThePasswordWhenTheBrowserSendsNone(t *testing.T) {
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := widgetConfig()
+	c.Widgets[0].Password = "s3cret"
+	if err := st.Set(c); err != nil {
+		t.Fatal(err)
+	}
+
+	// The browser saves again (e.g. a reorder) without ever having seen it.
+	c = st.Get().Redacted()
+	c.Title = "Renamed"
+	if err := st.Set(c); err != nil {
+		t.Fatal(err)
+	}
+	if got := st.Get().Widgets[0].Password; got != "s3cret" {
+		t.Fatalf("password = %q, want it kept", got)
+	}
+
+	// Pointing the widget somewhere else must not carry the password along.
+	c = st.Get().Redacted()
+	c.Widgets[0].URL = "http://elsewhere.local:61208"
+	if err := st.Set(c); err != nil {
+		t.Fatal(err)
+	}
+	if got := st.Get().Widgets[0].Password; got != "" {
+		t.Fatalf("password = %q after the address changed, want it dropped", got)
+	}
+	c = st.Get().Redacted()
+	c.Widgets[0].URL = "http://pve.local:61208"
+	c.Widgets[0].Password = "s3cret"
+	if err := st.Set(c); err != nil {
+		t.Fatal(err)
+	}
+
+	// An explicit new value replaces it.
+	c = st.Get().Redacted()
+	c.Widgets[0].Password = "other"
+	if err := st.Set(c); err != nil {
+		t.Fatal(err)
+	}
+	if got := st.Get().Widgets[0].Password; got != "other" {
+		t.Fatalf("password = %q, want the new one", got)
+	}
+
+	// ...and an explicit request removes it.
+	c = st.Get().Redacted()
+	c.Widgets[0].ClearPassword = true
+	if err := st.Set(c); err != nil {
+		t.Fatal(err)
+	}
+	if got := st.Get().Widgets[0].Password; got != "" {
+		t.Fatalf("password = %q, want it cleared", got)
+	}
+	w := st.Get().Widgets[0]
+	if w.ClearPassword || w.HasPassword {
+		t.Fatalf("transient flags must not be stored: %+v", w)
+	}
+}
+
+func TestOldConfigWithoutWidgetsStillLoads(t *testing.T) {
+	dir := t.TempDir()
+	old := `{"title":"T","settings":{"theme":"auto","density":"comfortable","checkInterval":60},"groups":[]}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Get().Widgets == nil {
+		t.Fatal("widgets should default to an empty list, not null")
 	}
 }

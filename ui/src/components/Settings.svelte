@@ -258,7 +258,7 @@
   {:else}
     <section>
       <h2>Configuration backup</h2>
-      <p class="hint">The file contains groups, services, and settings. Importing it replaces the current configuration.</p>
+      <p class="hint">The file contains groups, services, widgets, and settings (widget passwords are never exported, so enter them again after importing on another install). Importing it replaces the current configuration.</p>
       <div class="row">
         <button type="button" onclick={exportConfig}>Export configuration</button>
         <button type="button" onclick={() => fileInput?.click()}>Import configuration</button>

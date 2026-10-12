@@ -244,6 +244,36 @@ select {
   border-bottom: var(--group-border-w, 1px) solid var(--group-border, color-mix(in srgb, var(--accent) 45%, transparent));
 }
 
+/* Widgets: standalone blocks that flow in rows next to (or above/below) the groups. */
+
+.widgets {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-start;
+  align-self: center;
+  gap: var(--gap);
+  width: var(--row-width);
+  max-width: 100%;
+  margin-bottom: 14px;
+}
+
+:root[data-layout='grid'] .widgets {
+  flex-basis: 100%;
+  width: 100%;
+  margin-bottom: 0;
+}
+
+.add-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+:root[data-layout='grid'] .add-row {
+  flex-basis: 100%;
+}
+
 .shelf:last-of-type {
   border-bottom: none;
   padding-bottom: 0;
@@ -362,8 +392,7 @@ button.tape:hover {
   box-shadow: 4px 0 0 var(--accent);
 }
 
-:root[data-layout='grid'] .empty,
-:root[data-layout='grid'] .add-group {
+:root[data-layout='grid'] .empty {
   flex-basis: 100%;
 }
 
