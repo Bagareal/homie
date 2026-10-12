@@ -96,9 +96,10 @@
   })
   const anyDown = $derived(summary.includes('unreachable'))
 
-  // In the grid layout everything is left-aligned inside a block as wide as
-  // the cards that fit side by side, and that block is centered. Without it a
-  // lone widget (or a short last row) would float in the middle of the page.
+  // In the grid layout the cards sit on fixed columns inside a block that is
+  // centered: as many columns as fit, never more than MAX_COLS, so a wide screen
+  // keeps a compact block and a narrower one drops to two columns, then one.
+  const MAX_COLS = 3
   $effect(() => {
     void [cfg.settings.layout, cfg.groups.length, cfg.widgets.length, app.query, app.editing]
     const el = main
@@ -109,15 +110,17 @@
       const cs = getComputedStyle(el)
       const gap = parseFloat(cs.columnGap) || 20
       const pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight)
-      const shelf = el.querySelector<HTMLElement>('.shelf')
       const root = getComputedStyle(document.documentElement)
       const tile = parseFloat(root.getPropertyValue('--tile-min')) || 120
       const tileGap = parseFloat(root.getPropertyValue('--gap')) || 16
-      // Without a group on screen, the size a card would have (3 tiles + padding + border).
-      const card = shelf?.offsetWidth ?? 3 * tile + 2 * tileGap + 34
+      const border = parseFloat(root.getPropertyValue('--group-border-w')) || 1
+      // The size of a card: 3 tiles + padding (16 each side, as in app.css) + border.
+      // Worked out, not measured, because a card on screen may already be squeezed.
+      const card = 3 * tile + 2 * tileGap + 2 * 16 + 2 * border
       const fits = Math.max(1, Math.floor((host.clientWidth - pad + gap) / (card + gap)))
       const wanted = Math.max(1, visible.length + (cfg.widgets.length > 0 && !app.query ? 1 : 0))
-      const cols = Math.min(fits, wanted)
+      const cols = Math.min(fits, wanted, MAX_COLS)
+      el.style.setProperty('--cols', String(cols))
       el.style.width = `${cols * card + (cols - 1) * gap + pad}px`
     }
     const ro = new ResizeObserver(fit)

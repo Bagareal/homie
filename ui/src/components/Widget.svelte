@@ -320,6 +320,11 @@
 {/if}
 
 <style>
+  /* In the grid layout a widget fills its column, like a group card. */
+  :global(:root[data-layout='grid']) .widget:not(.preview) {
+    width: 100%;
+  }
+
   .widget {
     position: relative;
     flex: none;

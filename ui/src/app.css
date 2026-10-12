@@ -260,7 +260,7 @@ select {
 
 /* In the grid layout a widget is one more item in the flow of cards. */
 :root[data-layout='grid'] .shelves > .widget {
-  align-self: flex-start;
+  align-self: start;
 }
 
 .shelf:last-of-type {
@@ -343,11 +343,12 @@ button.tape:hover {
 
 :root[data-layout='grid'] .shelves {
   max-width: none;
-  flex-direction: row;
-  flex-wrap: wrap;
-  /* Left-aligned inside a block Dashboard.svelte sizes to whole columns of
-     cards and centers, so a lone widget or a short last row stays at the left. */
-  justify-content: flex-start;
+  /* Fixed columns (--cols, set by Dashboard.svelte, at most three) inside a block
+     as wide as those columns, which is centered. Cards in a row share a height,
+     and a short last row stays at the left. */
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  justify-content: start;
   align-items: stretch;
   gap: 20px;
   margin-inline: auto;
@@ -392,7 +393,7 @@ button.tape:hover {
 }
 
 :root[data-layout='grid'] .empty {
-  flex-basis: 100%;
+  grid-column: 1 / -1;
 }
 
 :root[data-layout='grid'] .edit-hint {
