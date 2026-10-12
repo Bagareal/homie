@@ -136,6 +136,11 @@ button.primary {
   color: var(--bg);
 }
 
+/* Sliders follow the accent color the user picked. */
+input[type='range'] {
+  accent-color: var(--accent);
+}
+
 button.danger {
   color: var(--down);
 }
