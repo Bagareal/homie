@@ -132,6 +132,8 @@
       version: 'TrueNAS-25.10.1',
       uptime: '12 days, 3:45:10',
       cpu: 12,
+      temp: { label: 'CPU (average)', value: 46 },
+      sensors: [{ label: 'CPU (average)', value: 46 }],
       mem: { percent: 48, used: 15 * 2 ** 30, total: 32 * 2 ** 30 },
       load: { min1: 0.52, min5: 0.38, min15: 0.3, cores: 8 },
       pools: [
@@ -431,7 +433,7 @@
             <div class="rbody">
               <div class="rhead">
                 <strong>{typeLabels[r.type]}</strong>
-                {#if r.type === 'cpu' && !nas}
+                {#if r.type === 'cpu'}
                   <label class="check"><input type="checkbox" checked={r.load} onchange={(e) => setCpu(r, 'load', e.currentTarget.checked)} /> Load</label>
                   <label class="check"><input type="checkbox" checked={r.temp} onchange={(e) => setCpu(r, 'temp', e.currentTarget.checked)} /> Temperature</label>
                 {/if}

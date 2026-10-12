@@ -259,6 +259,14 @@ func TestMetricsOfForTrueNAS(t *testing.T) {
 	if want := "info,mem,pools,drives,alerts,apps"; strings.Join(got, ",") != want {
 		t.Errorf("got %v, want %s", got, want)
 	}
+	got = metricsOf("truenas", []config.Row{{Type: "cpu", Temp: true}})
+	if want := "cputemp"; strings.Join(got, ",") != want {
+		t.Errorf("temperature only: got %v, want %s", got, want)
+	}
+	got = metricsOf("truenas", []config.Row{{Type: "cpu", Load: true, Temp: true}})
+	if want := "cpu,cputemp"; strings.Join(got, ",") != want {
+		t.Errorf("load and temperature: got %v, want %s", got, want)
+	}
 }
 
 func TestBackgroundsStayWhileAThemeUsesThem(t *testing.T) {

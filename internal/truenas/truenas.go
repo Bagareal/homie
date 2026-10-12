@@ -16,7 +16,7 @@ import (
 )
 
 // Metrics are the groups of values that can be read.
-var Metrics = []string{"info", "cpu", "mem", "pools", "drives", "alerts", "apps"}
+var Metrics = []string{"info", "cpu", "cputemp", "mem", "pools", "drives", "alerts", "apps"}
 
 // Target is one TrueNAS system and which of the Metrics to read.
 type Target struct {
@@ -58,6 +58,12 @@ type Pool struct {
 	Scan    *Scan   `json:"scan,omitempty"`
 }
 
+// Temp is one temperature reading in degrees Celsius.
+type Temp struct {
+	Label string  `json:"label"`
+	Value float64 `json:"value"`
+}
+
 // Drive is one disk with its temperature (Temp is nil when it reports none).
 type Drive struct {
 	Name  string   `json:"name"`
@@ -93,11 +99,14 @@ type Data struct {
 	Uptime   *string  `json:"uptime,omitempty"`
 	Load     *Load    `json:"load,omitempty"`
 	CPU      *float64 `json:"cpu,omitempty"`
-	Mem      *Usage   `json:"mem,omitempty"`
-	Pools    []Pool   `json:"pools,omitempty"`
-	Drives   []Drive  `json:"drives,omitempty"`
-	Alerts   *Alerts  `json:"alerts,omitempty"`
-	Apps     *Apps    `json:"apps,omitempty"`
+	// Temp is the CPU temperature (average of the cores); Sensors adds each core.
+	Temp    *Temp   `json:"temp,omitempty"`
+	Sensors []Temp  `json:"sensors,omitempty"`
+	Mem     *Usage  `json:"mem,omitempty"`
+	Pools   []Pool  `json:"pools,omitempty"`
+	Drives  []Drive `json:"drives,omitempty"`
+	Alerts  *Alerts `json:"alerts,omitempty"`
+	Apps    *Apps   `json:"apps,omitempty"`
 }
 
 // Result is what the dashboard receives for one widget.
@@ -258,6 +267,22 @@ func (c *Client) Fetch(ctx context.Context, t Target) Result {
 			if want["mem"] && mem == nil {
 				failed["mem"] = true
 			}
+		}
+	}
+	if want["cputemp"] {
+		notes := map[string]string{}
+		temps, err := readCPUTemp(conn, notes)
+		for k, v := range notes {
+			if r.Notes == nil {
+				r.Notes = map[string]string{}
+			}
+			r.Notes[k] = v
+		}
+		if err != nil || len(temps) == 0 {
+			failed["cputemp"] = true
+		} else {
+			r.Data.Sensors = temps
+			r.Data.Temp = &r.Data.Sensors[0]
 		}
 	}
 	if want["pools"] {
@@ -566,6 +591,52 @@ func readReporting(c *wsConn, wantCPU, wantMem bool, physmem float64, notes map[
 		}
 	}
 	return cpu, mem, nil
+}
+
+// readCPUTemp reads the newest CPU temperatures from the "cputemp" graph (one
+// series per core). The first result is the average of the cores, followed by
+// each core. A system without sensors (a virtual machine) reports nothing.
+func readCPUTemp(c *wsConn, notes map[string]string) ([]Temp, error) {
+	now := time.Now().Unix()
+	query := map[string]any{"start": now - 120, "end": now, "aggregate": false}
+	var res []struct {
+		Name   string   `json:"name"`
+		Legend []string `json:"legend"`
+		Data   [][]any  `json:"data"`
+	}
+	if err := c.call("reporting.netdata_get_data", []any{[]any{map[string]any{"name": "cputemp"}}, query}, &res); err != nil {
+		return nil, err
+	}
+	for _, g := range res {
+		if g.Name != "cputemp" {
+			continue
+		}
+		series, ok := latest(g.Legend, g.Data)
+		if !ok {
+			notes["cputemp"] = fmt.Sprintf("no usable data point: legend=%v, %d rows", g.Legend, len(g.Data))
+			return nil, nil
+		}
+		names := make([]string, 0, len(series))
+		var sum float64
+		for name, v := range series {
+			names = append(names, name)
+			sum += v
+		}
+		sort.Slice(names, func(i, j int) bool { return coreOrder(names[i]) < coreOrder(names[j]) })
+		out := []Temp{{Label: "CPU (average)", Value: math.Round(sum/float64(len(series))*10) / 10}}
+		for _, n := range names {
+			out = append(out, Temp{Label: "Core " + strings.TrimPrefix(n, "cpu"), Value: math.Round(series[n]*10) / 10})
+		}
+		return out, nil
+	}
+	notes["cputemp"] = "the system returned no cputemp graph (no temperature sensors?)"
+	return nil, nil
+}
+
+// coreOrder makes "0", "2", "10" and "cpu2" sort by their number.
+func coreOrder(name string) string {
+	n := strings.TrimPrefix(name, "cpu")
+	return strings.Repeat("0", 6-min(6, len(n))) + n
 }
 
 // memoryUsage turns the memory graph into a usage figure. TrueNAS documents it

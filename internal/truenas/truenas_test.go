@@ -42,7 +42,8 @@ var defaults = map[string]string{
 		{"level":"ERROR","text":"old","dismissed":true}]`,
 	"reporting.netdata_get_data": `[
 		{"name":"cpu","legend":["time","user","system","iowait"],"data":[[1760000000,3,2,1],[1760000001,5,3,null],[1760000002,4,2,1.5]]},
-		{"name":"memory","legend":["time","free","used","cached","buffers"],"data":[[1760000002,8000,16000,6000,2000]]}]`,
+		{"name":"memory","legend":["time","free","used","cached","buffers"],"data":[[1760000002,8000,16000,6000,2000]]},
+		{"name":"cputemp","legend":["time","0","1","10","2"],"data":[[1760000002,40,44,60,42]]}]`,
 }
 
 func newFakeNAS(t *testing.T) *fakeNAS {
@@ -194,6 +195,31 @@ func writeServerFrame(w *bufio.Writer, opcode byte, fin bool, p []byte) {
 
 func target(f *fakeNAS, key, user string, metrics ...string) Target {
 	return Target{URL: f.URL, Username: user, APIKey: key, Metrics: metrics}
+}
+
+func TestFetchReadsTheCPUTemperature(t *testing.T) {
+	f := newFakeNAS(t)
+	r := New().Fetch(context.Background(), target(f, "s3cret", "", "cputemp"))
+	if !r.Online || len(r.Failed) != 0 || r.Data.Temp == nil {
+		t.Fatalf("online=%v failed=%v temp=%v notes=%v", r.Online, r.Failed, r.Data.Temp, r.Notes)
+	}
+	if r.Data.Temp.Label != "CPU (average)" || r.Data.Temp.Value != 46.5 {
+		t.Errorf("temp = %+v", r.Data.Temp)
+	}
+	var labels []string
+	for _, s := range r.Data.Sensors {
+		labels = append(labels, s.Label)
+	}
+	if want := "CPU (average),Core 0,Core 1,Core 2,Core 10"; strings.Join(labels, ",") != want {
+		t.Errorf("sensors = %v, want %s", labels, want)
+	}
+
+	// A system without the sensors reports the temperature as failed and says why.
+	f.results["reporting.netdata_get_data"] = `[]`
+	r = New().Fetch(context.Background(), target(f, "s3cret", "", "cputemp"))
+	if r.Data.Temp != nil || len(r.Failed) != 1 || r.Notes["cputemp"] == "" {
+		t.Errorf("no sensors: temp=%v failed=%v notes=%v", r.Data.Temp, r.Failed, r.Notes)
+	}
 }
 
 func TestFetchReadsEverything(t *testing.T) {

@@ -32,9 +32,9 @@ In TrueNAS, **Credentials → Users → Add**:
 | --- | --- |
 | Pools | `pool.query` |
 | Drives and temperatures | `disk.query`, `disk.temperatures` |
+| CPU and memory, CPU temperature | `reporting.netdata_get_data` (graphs `cpu`, `memory`, `cputemp`) |
 | Alerts | `alert.list` |
 | Apps | `app.query` |
-| CPU, memory | `reporting.netdata_get_data` |
 | Uptime, load, version | `system.info`, `system.version` |
 
 Do not use `root` or `truenas_admin` for this: a key with full rights is far more than Homie needs.
@@ -61,7 +61,8 @@ What the rows show:
 - **Alerts**: the number of alerts nobody has dismissed, red when serious.
 - **Apps**: running / installed; hover to see which ones are not running.
 - **Hottest drive** (or one drive you pick): temperature. TrueNAS refreshes disk temperatures about every five minutes, so they change slowly.
-- **CPU, Memory, Load average, Uptime, Version.**
+- **CPU**: the usage, the temperature, or both side by side (tick *Load* and/or *Temperature* on the row). The temperature is the average of the cores; you can pick a single core instead. A machine without temperature sensors (a virtual machine, for one) shows `n/a`.
+- **Memory, Load average, Uptime, Version.**
 
 ## Where the key is kept
 

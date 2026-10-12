@@ -50,7 +50,10 @@ func metricsOf(kind string, rows []config.Row) []string {
 				need["pools"] = true
 			case "drive":
 				need["drives"] = true
-			default: // cpu, alerts
+			case "cpu":
+				need["cpu"] = r.Load || need["cpu"]
+				need["cputemp"] = r.Temp || need["cputemp"]
+			default: // alerts, apps
 				need[r.Type] = true
 			}
 		case r.Type == "cpu":
