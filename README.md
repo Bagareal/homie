@@ -56,28 +56,16 @@ The backend periodically runs an active check on each service (interval set in S
 
 ## Widgets
 
-A widget is a standalone block, separate from the groups, that shows live data from a host running [Glances](https://nicolargo.github.io/glances/). Use **Edit → Add widget**, give it a name and press "Test connection": Homie then lists the disks, temperature sensors and network cards the host reports, so you pick them from a menu instead of typing them. Each value is a row you can rename ("HDD esterno" instead of `/mnt/hdd-esterno`), reorder by dragging, or remove. The CPU row can show the load, a temperature, or both side by side (the bar follows the load, or the temperature when it is alone). Other rows: memory, swap, load average, uptime, one temperature sensor, one disk (or all), network traffic.
+A widget is a standalone block, separate from the groups, that shows live numbers from one of your hosts. Two kinds exist so far, each with its own setup guide:
+
+- **Glances**: CPU, memory, swap, load, uptime, temperatures, disks and network traffic of any Linux host (a Proxmox node, for example). Guide: [docs/widgets-glances.md](docs/widgets-glances.md) (installing Glances and keeping it running).
+- **TrueNAS**: pools, alerts, apps, drive temperatures, CPU, memory, uptime. Guide: [docs/widgets-truenas.md](docs/widgets-truenas.md) (creating a read-only user and an API key, and what to avoid).
+
+Use **Edit → Add widget**, pick the type, fill in the address and press "Test connection": Homie then lists what the host offers (disks, sensors, network cards, pools, drives), so you choose from a menu instead of typing names. Each value is a row you can rename ("HDD esterno" instead of `/mnt/hdd-esterno`), reorder by dragging, or remove. A CPU row can show the load, a temperature, or both side by side (the bar follows the load, or the temperature when it is alone).
 
 The editor has four tabs (Source, Values, Size, Appearance) with the preview always in view; the Size tab draws the widget to scale next to a real group card. In edit mode the "Add group" and "Add widget" buttons are in the top bar. You choose the width and height and the colors (background with opacity, text, border, bars). While editing, drag a widget wherever you like, even between two groups: groups and widgets share one order. In the grid layout a widget flows like a card.
 
-On the host, start Glances in web server mode (it listens on port 61208):
-
-```bash
-apt install glances          # or: pipx install glances
-glances -w                   # add --password to require one (basic authentication)
-```
-
-Homie's server reads the Glances REST API (versions 4 and 3), so the browser never talks to the host and plain-http hosts work behind an HTTPS proxy. Use "Test connection" in the editor to check the address.
-
-A password is stored only on the server: it is never sent back to the browser and is not included in exported backups. Changing the address or username removes it. Glances' basic authentication travels unencrypted over http, so use it on a trusted network.
-
-### TrueNAS widgets
-
-Choose the **TrueNAS** type when adding a widget (TrueNAS 25.04 or later). Homie talks to its JSON-RPC API over a WebSocket (the older REST API is deprecated and removed in TrueNAS 26) using an API key, so it needs an `https://` address: TrueNAS revokes any API key that is sent without TLS, so Homie refuses plain `http://` for this type. The certificate is not verified, so a self-signed one works.
-
-Create the key in TrueNAS from the user menu at the top right (*My API Keys → Add API Key*), linked to a dedicated user that has only the *Readonly Admin* role. Paste it into the widget; it is stored on the Homie server and never sent back to the browser or exported. If the login is refused, also enter the name of the user the key belongs to.
-
-Rows available: every pool (health, space used, last scrub in the tooltip), alerts (the count of undismissed ones, red when serious), apps (running / installed, the stopped ones in the tooltip), the hottest drive or a chosen one, CPU, memory, load average, uptime and the TrueNAS version. "Test connection" lists your pools and drives to pick from.
+Homie's server reads the hosts, not your browser, so a host only has to be reachable from Homie's container. Passwords and API keys are stored only on the server: they are never sent back to the browser, are not included in exported backups, and changing a widget's address or username removes them.
 
 ## Appearance
 
@@ -106,6 +94,7 @@ internal/truenas/       reads a TrueNAS system over its JSON-RPC WebSocket API (
 internal/server/        HTTP API and pages
 internal/webui/         compiled interface, embedded in the binary
 ui/                     interface (Svelte 5, TypeScript, Vite)
+docs/                   widget setup guides (Glances, TrueNAS)
 scripts/setup.sh        install and update inside the LXC
 install.sh              installer for the Proxmox host
 ```
