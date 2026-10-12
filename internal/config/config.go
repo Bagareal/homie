@@ -12,7 +12,7 @@ import (
 	"sync"
 )
 
-var hexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+var hexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$`)
 
 // safeFilename matches the names Homie itself generates for uploaded
 // background images (e.g. "bg-1739203812123456789.jpg"). Validated here too
@@ -24,9 +24,9 @@ type Settings struct {
 	Density         string `json:"density"`       // compact | comfortable
 	CheckInterval   int    `json:"checkInterval"` // seconds
 	OpenInNewTab    bool   `json:"openInNewTab"`
-	BackgroundColor string `json:"backgroundColor,omitempty"` // #rrggbb; empty = theme default
-	TileColor       string `json:"tileColor,omitempty"`       // #rrggbb; empty = theme default
-	AccentColor     string `json:"accentColor,omitempty"`     // #rrggbb; empty = theme default
+	BackgroundColor string `json:"backgroundColor,omitempty"` // #rrggbb or #rrggbbaa; empty = theme default
+	TileColor       string `json:"tileColor,omitempty"`       // #rrggbb or #rrggbbaa; empty = theme default
+	AccentColor     string `json:"accentColor,omitempty"`     // #rrggbb or #rrggbbaa; empty = theme default
 	// BackgroundImage is a filename inside <data>/backgrounds, served at
 	// GET /backgrounds/{name}; empty = no image (plain BackgroundColor).
 	BackgroundImage string `json:"backgroundImage,omitempty"`
@@ -40,16 +40,16 @@ type Settings struct {
 	// BarOpacity is 1-100 for the top bar's background; 0 (omitted)
 	// normalizes to 100 (solid).
 	BarOpacity int `json:"barOpacity,omitempty"`
-	// CardColor (#rrggbb; empty = theme default) and CardOpacity (1-100;
+	// CardColor (#rrggbb[aa]; empty = theme default) and CardOpacity (1-100;
 	// 0 normalizes to the default) style the group cards of the grid layout.
 	CardColor string `json:"cardColor,omitempty"`
 	// HoverColor is a tile's color under the pointer; PanelColor is the
-	// background of panels (Settings sections, dialogs). Both #rrggbb, empty =
+	// background of panels (Settings sections, dialogs). Both #rrggbb[aa], empty =
 	// theme default.
 	HoverColor string `json:"hoverColor,omitempty"`
 	PanelColor string `json:"panelColor,omitempty"`
 	// Tile text (normal and under the pointer), border colors, and the glow
-	// shown around a hovered tile. All #rrggbb, empty = theme default.
+	// shown around a hovered tile. All #rrggbb[aa], empty = theme default.
 	TileTextColor      string `json:"tileTextColor,omitempty"`
 	TileTextHoverColor string `json:"tileTextHoverColor,omitempty"`
 	TileBorderColor    string `json:"tileBorderColor,omitempty"`
@@ -180,7 +180,7 @@ func (c Config) Validate() error {
 		"glow":            c.Settings.GlowColor,
 	} {
 		if v != "" && !hexColor.MatchString(v) {
-			return fmt.Errorf("invalid %s color: must be in #rrggbb format", name)
+			return fmt.Errorf("invalid %s color: must be in #rrggbb or #rrggbbaa format", name)
 		}
 	}
 	if img := c.Settings.BackgroundImage; img != "" && !safeFilename.MatchString(img) {

@@ -202,3 +202,21 @@ func TestStoreOpenMigratesV06BlocksFileAndPersistsOnSave(t *testing.T) {
 		t.Fatal("expected the on-disk config to use the \"groups\" key after a save")
 	}
 }
+
+func TestValidateColorAcceptsOptionalAlpha(t *testing.T) {
+	for color, ok := range map[string]bool{
+		"#e9b949":   true,
+		"#e9b94980": true,
+		"#E9B949FF": true,
+		"#e9b94":    false,
+		"#e9b9498":  false,
+		"e9b949":    false,
+		"#gggggg":   false,
+	} {
+		c := Default()
+		c.Settings.AccentColor = color
+		if err := c.Validate(); (err == nil) != ok {
+			t.Errorf("accent %q: valid=%v, got err=%v", color, ok, err)
+		}
+	}
+}

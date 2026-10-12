@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick } from 'svelte'
+  import Slider from './Slider.svelte'
 
   let {
     label,
@@ -20,12 +21,21 @@
     oncommit: () => void
   } = $props()
 
-  const HEX = /^#[0-9a-f]{6}$/
+  // #rrggbb, or #rrggbbaa when the color is not fully opaque.
+  const HEX = /^#[0-9a-f]{6}([0-9a-f]{2})?$/
 
   function normalize(raw: string): string | null {
     let v = raw.trim().toLowerCase()
     if (!v.startsWith('#')) v = `#${v}`
-    return HEX.test(v) ? v : null
+    if (!HEX.test(v)) return null
+    return v.length === 9 && v.endsWith('ff') ? v.slice(0, 7) : v
+  }
+
+  const alphaOf = (hex: string) => (hex.length === 9 ? Math.round((parseInt(hex.slice(7), 16) / 255) * 100) : 100)
+
+  function compose(rgb: string, pct: number): string {
+    if (pct >= 100) return rgb
+    return rgb + Math.round((pct / 100) * 255).toString(16).padStart(2, '0')
   }
 
   let fallback = $state('#000000')
@@ -40,6 +50,8 @@
   })
 
   const shown = $derived(value ?? fallback)
+  const rgb = $derived(shown.slice(0, 7))
+  const alpha = $derived(alphaOf(shown))
   let text = $state('')
   let invalid = $state(false)
   $effect(() => {
@@ -54,9 +66,9 @@
   <span class="name" id={uid}>{label}</span>
   <input
     type="color"
-    value={shown}
+    value={rgb}
     aria-labelledby={uid}
-    oninput={(e) => onpreview(e.currentTarget.value)}
+    oninput={(e) => onpreview(compose(e.currentTarget.value, alpha))}
     onchange={oncommit}
   />
   <input
@@ -65,7 +77,7 @@
     type="text"
     spellcheck="false"
     autocomplete="off"
-    maxlength="7"
+    maxlength="9"
     aria-label="{label} (hex code)"
     bind:value={text}
     oninput={() => {
@@ -80,6 +92,14 @@
         invalid = false
       }
     }}
+  />
+  <Slider
+    compact
+    label="{label} alpha"
+    min={0}
+    value={alpha}
+    oninput={(v) => onpreview(compose(rgb, v))}
+    {oncommit}
   />
   {#if value === undefined}
     <span class="tag">default</span>
@@ -111,7 +131,7 @@
     padding: 2px;
   }
   .hex {
-    width: 9ch;
+    width: 11ch;
     font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
     font-size: 0.9rem;
     padding: 5px 8px;

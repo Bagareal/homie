@@ -7,6 +7,7 @@
     min = 1,
     max = 100,
     unit = '%',
+    compact = false,
     oninput,
     oncommit,
   }: {
@@ -15,6 +16,8 @@
     min?: number
     max?: number
     unit?: string
+    // Hides the visible label (it stays as the accessible name), for use inline.
+    compact?: boolean
     // Called continuously while dragging (live preview) ...
     oninput: (v: number) => void
     // ... and once when the value is final (release, or Enter after typing).
@@ -50,8 +53,8 @@
   const uid = $derived(`slider-${label.replace(/\W+/g, '-')}`)
 </script>
 
-<div class="slider">
-  <span class="name" id={uid}>{label}</span>
+<div class="slider" class:compact>
+  <span class="name" class:sr-only={compact} id={uid}>{label}</span>
   <input
     type="range"
     {min}
@@ -101,6 +104,18 @@
   .name {
     font-weight: 600;
     min-width: 9.5rem;
+  }
+  .compact input[type='range'] {
+    flex: none;
+    width: 90px;
+    min-width: 0;
+  }
+  .compact .name {
+    min-width: 0;
+  }
+  .compact {
+    flex-wrap: nowrap;
+    gap: 6px;
   }
   input[type='range'] {
     flex: 1;
