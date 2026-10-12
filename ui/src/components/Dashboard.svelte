@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { app } from '../lib/state.svelte'
+  import { barHeight } from '../lib/barHeight'
   import { clearDraft, loadDraft, type ItemFields } from '../lib/draft'
   import type { Item } from '../lib/types'
   import Shelf from './Shelf.svelte'
@@ -87,7 +88,7 @@
 
 <svelte:window onkeydown={onWindowKey} />
 
-<header class="bar">
+<header class="bar" use:barHeight>
   <h1>{cfg.title || 'Homie'}</h1>
   {#if !app.editing}
     <input
@@ -111,6 +112,7 @@
   </nav>
 </header>
 
+<div class="scroller">
 {#if app.editing && cfg.groups.length > 0}
   <p class="edit-hint">Drag tiles and group labels to reorder them. Click an item to edit it.</p>
 {/if}
@@ -145,6 +147,7 @@
     <button type="button" class="add-group" onclick={() => (groupEdit = { id: null })}>Add group</button>
   {/if}
 </main>
+</div>
 
 {#if itemEdit}
   <ItemDialog groupId={itemEdit.groupId} item={itemEdit.item} draft={itemEdit.draft} onclose={() => (itemEdit = null)} />

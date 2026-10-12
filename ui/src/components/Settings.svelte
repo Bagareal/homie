@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import * as api from '../lib/api'
+  import { barHeight } from '../lib/barHeight'
   import { app } from '../lib/state.svelte'
   import type { Config, Settings } from '../lib/types'
 
@@ -115,11 +116,12 @@
   ] as const
 </script>
 
-<header class="bar">
+<header class="bar" use:barHeight>
   <h1>Settings</h1>
   <nav class="actions"><a class="btn" href="#/">Back to dashboard</a></nav>
 </header>
 
+<div class="scroller">
 <main class="settings">
   <section>
     <h2>Appearance</h2>
@@ -246,6 +248,7 @@
 
   {#if version}<p class="version">Homie {version}</p>{/if}
 </main>
+</div>
 
 <style>
   .color-row {
