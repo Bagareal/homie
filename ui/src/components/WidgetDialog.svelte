@@ -326,7 +326,7 @@
         {/if}
       {/if}
       {#if nas}
-        <small>Create the key in TrueNAS under Credentials → API Keys, ideally for a user with only the Readonly Admin role. It is stored on the Homie server and never sent back to the browser.</small>
+        <small>Create the key in TrueNAS: user menu at the top right → My API Keys → Add API Key, linked to a user that ideally has only the Readonly Admin role. It is stored on the Homie server and never sent back to the browser.</small>
       {:else}
         <small>Glances only supports basic authentication, which is sent unencrypted over plain http. Use it on a trusted network.</small>
       {/if}
