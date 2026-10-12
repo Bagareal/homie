@@ -98,6 +98,9 @@ type Result struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 	Data      Data      `json:"data"`
 	Failed    []string  `json:"failed,omitempty"`
+	// Notes explain why a value could not be read (what the system answered
+	// instead of what was expected). Meant for troubleshooting.
+	Notes map[string]string `json:"notes,omitempty"`
 }
 
 // Client reads TrueNAS systems. The zero value is ready to use.
@@ -226,7 +229,11 @@ func (c *Client) Fetch(ctx context.Context, t Target) Result {
 		}
 	}
 	if want["cpu"] || (want["mem"] && !failed["mem"]) {
-		cpu, mem, err := readReporting(conn, want["cpu"], want["mem"], info.PhysMem)
+		notes := map[string]string{}
+		cpu, mem, err := readReporting(conn, want["cpu"], want["mem"], info.PhysMem, notes)
+		if len(notes) > 0 {
+			r.Notes = notes
+		}
 		if err != nil {
 			if want["cpu"] {
 				failed["cpu"] = true
@@ -477,7 +484,7 @@ func readAlerts(c *wsConn) (*Alerts, error) {
 // graphs of the last two minutes. The graph layout is not formally documented,
 // so it is read by the names of the series and any failure just leaves the
 // value out.
-func readReporting(c *wsConn, wantCPU, wantMem bool, physmem float64) (cpu *float64, mem *Usage, err error) {
+func readReporting(c *wsConn, wantCPU, wantMem bool, physmem float64, notes map[string]string) (cpu *float64, mem *Usage, err error) {
 	var graphs []map[string]any
 	if wantCPU {
 		graphs = append(graphs, map[string]any{"name": "cpu"})
@@ -498,6 +505,7 @@ func readReporting(c *wsConn, wantCPU, wantMem bool, physmem float64) (cpu *floa
 	for _, g := range res {
 		series, ok := latest(g.Legend, g.Data)
 		if !ok {
+			notes[g.Name] = fmt.Sprintf("no usable data point: legend=%v, %d rows", g.Legend, len(g.Data))
 			continue
 		}
 		switch g.Name {
@@ -511,20 +519,48 @@ func readReporting(c *wsConn, wantCPU, wantMem bool, physmem float64) (cpu *floa
 			sum = math.Round(math.Min(100, math.Max(0, sum))*10) / 10
 			cpu = &sum
 		case "memory":
-			used, ok := series["used"]
-			var total float64
-			for _, v := range series {
-				total += v
+			if u := memoryUsage(series, physmem); u != nil {
+				mem = u
+			} else {
+				notes["memory"] = fmt.Sprintf("unrecognised memory graph: series=%v, installed=%.0f", series, physmem)
 			}
-			if !ok || total <= 0 {
-				continue
-			}
-			pct := math.Round(used/total*1000) / 10
-			u := Usage{Percent: pct, Used: physmem * pct / 100, Total: physmem}
-			mem = &u
 		}
 	}
 	return cpu, mem, nil
+}
+
+// memoryUsage turns the memory graph into a usage figure. TrueNAS documents it
+// as the physical memory *available*, so used = installed - available; a graph
+// that lists used memory next to free/cached/buffers is read as a share. The
+// values are mebibytes (as in netdata) or bytes; which one is told by comparing
+// them with the installed memory.
+func memoryUsage(series map[string]float64, physmem float64) *Usage {
+	if used, ok := series["used"]; ok {
+		var sum float64
+		for _, v := range series {
+			sum += v
+		}
+		if sum <= 0 || physmem <= 0 {
+			return nil
+		}
+		pct := math.Round(used/sum*1000) / 10
+		return &Usage{Percent: pct, Used: physmem * pct / 100, Total: physmem}
+	}
+	avail, ok := series["available"]
+	if !ok {
+		avail, ok = series["free"]
+	}
+	if !ok || physmem <= 0 {
+		return nil
+	}
+	if avail*(1<<20) <= physmem*1.05 {
+		avail *= 1 << 20 // mebibytes
+	}
+	if avail > physmem {
+		avail = physmem
+	}
+	used := physmem - avail
+	return &Usage{Percent: math.Round(used/physmem*1000) / 10, Used: used, Total: physmem}
 }
 
 // latest returns the newest data point as series name -> value. A point is a

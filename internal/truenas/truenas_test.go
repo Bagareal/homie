@@ -235,6 +235,35 @@ func TestFetchReadsEverything(t *testing.T) {
 	}
 }
 
+func TestMemoryFromAvailableOnly(t *testing.T) {
+	// TrueNAS documents the memory graph as "physical memory available".
+	physmem := 34359738368.0 // 32768 MiB
+	mib := physmem / (1 << 20)
+	u := memoryUsage(map[string]float64{"available": mib / 2}, physmem)
+	if u == nil || u.Percent != 50 || u.Used != physmem/2 {
+		t.Errorf("available in MiB: %+v", u)
+	}
+	u = memoryUsage(map[string]float64{"available": physmem / 4}, physmem)
+	if u == nil || u.Percent != 75 {
+		t.Errorf("available in bytes: %+v", u)
+	}
+	if memoryUsage(map[string]float64{"weird": 1}, physmem) != nil {
+		t.Error("an unknown graph must not produce a figure")
+	}
+
+	f := newFakeNAS(t)
+	f.results["reporting.netdata_get_data"] = `[{"name":"memory","legend":["time","available"],"data":[[1760000002,16384]]}]`
+	r := New().Fetch(context.Background(), target(f, "s3cret", "", "mem"))
+	if r.Data.Mem == nil || r.Data.Mem.Percent != 50 {
+		t.Errorf("mem = %+v notes=%v", r.Data.Mem, r.Notes)
+	}
+	f.results["reporting.netdata_get_data"] = `[{"name":"memory","legend":["time","strange"],"data":[[1760000002,5]]}]`
+	r = New().Fetch(context.Background(), target(f, "s3cret", "", "mem"))
+	if r.Data.Mem != nil || r.Notes["memory"] == "" || len(r.Failed) != 1 {
+		t.Errorf("unrecognised graph: mem=%+v notes=%v failed=%v", r.Data.Mem, r.Notes, r.Failed)
+	}
+}
+
 func TestFetchAsksOnlyForWhatItNeeds(t *testing.T) {
 	f := newFakeNAS(t)
 	r := New().Fetch(context.Background(), target(f, "s3cret", "", "alerts"))

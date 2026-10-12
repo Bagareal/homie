@@ -127,6 +127,8 @@ export interface WidgetData {
   error?: string
   updatedAt: string
   data: HostData
+  // Why a value could not be read, for troubleshooting.
+  notes?: Record<string, string>
 }
 
 export interface Status {

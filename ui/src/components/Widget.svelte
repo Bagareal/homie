@@ -74,7 +74,7 @@
     const out: Line[] = []
     for (const r of widget.rows) {
       const label = r.name || labels[r.type]
-      const na = (): Line => ({ key: r.id, label, value: 'n/a' })
+      const na = (): Line => ({ key: r.id, label, value: 'n/a', title: data?.notes?.[r.type === 'mem' ? 'memory' : r.type] })
       switch (r.type) {
         case 'cpu': {
           const t = r.temp ? sensorFor(d, r.key) : undefined
