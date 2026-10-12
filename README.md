@@ -1,101 +1,107 @@
 # Homie
 
-Dashboard per homelab: tutti i servizi in un unico posto, organizzati in gruppi e gestiti interamente dall'interfaccia web. Aggiungi, modifichi, elimini e riordini servizi e gruppi trascinandoli, senza toccare file di configurazione.
+A homelab dashboard: all your services in one place, organized into groups and managed entirely from the web interface. Add, edit, delete, and reorder services and groups by dragging them, without touching any configuration files.
 
-Pensata per girare in una LXC su Proxmox VE e per essere usata solo in rete locale: non ha login.
+Designed to run in an LXC container on Proxmox VE and to be used on a local network only: it has no login.
 
-## Installazione su Proxmox
+## Installing on Proxmox
 
-Dalla shell dell'host Proxmox:
+From the Proxmox host shell:
 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/Bagareal/homie/main/install.sh)"
 ```
 
-Lo script crea una LXC Debian non privilegiata (predefiniti: 1 core, 512 MB di RAM, 4 GB di disco, DHCP su vmbr0, avvio automatico), installa l'ultima release verificandone il checksum e avvia il servizio. Alla fine stampa l'indirizzo della dashboard, raggiungibile sulla porta 8080.
+The script creates an unprivileged Debian LXC (defaults: 1 core, 512 MB of RAM, 4 GB of disk, DHCP on vmbr0, start on boot), installs the latest release after verifying its checksum, and starts the service. At the end it prints the dashboard address, reachable on port 8080.
 
-Rispondendo "n" alla prima domanda puoi scegliere ID, hostname, risorse, storage, bridge e IP statico.
+Answering "n" to the first question lets you choose the ID, hostname, resources, storage, bridge, and a static IP.
 
-## Aggiornamento
+## Updating
 
-Dall'host Proxmox:
+From the Proxmox host:
 
 ```bash
 pct exec <ID> -- homie-update
 ```
 
-oppure `homie-update` dalla console della LXC. Scarica l'ultima release e riavvia il servizio; la configurazione non viene toccata.
+or run `homie-update` from the LXC console. It downloads the latest release and restarts the service; your configuration is left untouched.
 
-## Dove stanno i dati
+## Where the data lives
 
-| Percorso | Contenuto |
+| Path | Contents |
 | --- | --- |
-| `/var/lib/homie/config.json` | Gruppi, servizi e impostazioni |
-| `/var/lib/homie/icons/` | Icone locali, raggiungibili come `/icons/nome.png` |
-| `/usr/local/bin/homie` | Il programma |
-| `/etc/systemd/system/homie.service` | Il servizio (utente di sistema `homie`) |
+| `/var/lib/homie/config.json` | Groups, services, and settings |
+| `/var/lib/homie/icons/` | Local icons, reachable as `/icons/name.png` |
+| `/usr/local/bin/homie` | The program |
+| `/etc/systemd/system/homie.service` | The service (runs as the `homie` system user) |
 
-La configurazione si può anche esportare e importare dalla pagina Impostazioni. Il backup della LXC con PBS la include.
+The configuration can also be exported and imported from the Settings page. A PBS backup of the LXC includes it.
 
-## Icone
+## Icons
 
-Nel campo Icona di un servizio puoi scrivere:
+In a service's Icon field you can enter:
 
-- il nome di un'icona della raccolta [dashboard-icons](https://github.com/homarr-labs/dashboard-icons), per esempio `proxmox`, `truenas-scale`, `adguard-home`, `jellyfin`
-- l'indirizzo completo di un'immagine
-- un file messo in `/var/lib/homie/icons/`, per esempio `/icons/router.png`
-- un emoji o un carattere
+- the name of an icon from the [dashboard-icons](https://github.com/homarr-labs/dashboard-icons) collection, for example `proxmox`, `truenas-scale`, `adguard-home`, `jellyfin`
+- the full address of an image
+- a file placed in `/var/lib/homie/icons/`, for example `/icons/router.png`
+- an emoji or a single character
 
-Se il campo è vuoto o l'icona non si carica, il riquadro mostra le iniziali del servizio.
+If the field is empty or the icon fails to load, the tile shows the service's initials.
 
-## Stato dei servizi
+## Service status
 
-Il backend controlla periodicamente ogni servizio con il controllo attivo (intervallo nelle Impostazioni). Un servizio è online se risponde con un codice HTTP inferiore a 500: anche una pagina di login (401, 403 o un redirect) conta come online, mentre un 502 o 503 di un reverse proxy senza backend no. I certificati self-signed sono accettati.
+The backend periodically runs an active check on each service (interval set in Settings). A service is online if it responds with an HTTP status code below 500: even a login page (401, 403, or a redirect) counts as online, while a 502 or 503 from a reverse proxy with no backend does not. Self-signed certificates are accepted.
 
-## Aspetto
+## Appearance
 
-Dalla sezione Aspetto in Impostazioni si personalizzano tema (chiaro/scuro/automatico), densità delle tile, e tre colori: sfondo della pagina, sfondo delle tile e colore d'accento (usato per i titoli dei gruppi e gli indicatori di trascinamento). Ogni colore ha un pulsante "Reset" per tornare al valore predefinito del tema.
+The Appearance section in Settings lets you customize:
 
-## Struttura del progetto
+- the theme (light, dark, or automatic) and the tile density
+- the layout: *List* stacks the groups in one column, *Grid* shows each group as a card, with the cards side by side
+- colors: page background, tile background, accent (used for group titles and drag indicators), and, in the grid layout, the group card color. Each color has a "Reset" button to return to the theme's default.
+- a background image (JPEG or PNG) with its own opacity
+- the opacity of the top bar and, in the grid layout, of the group cards
+
+## Project structure
 
 ```
-cmd/homie/              avvio del programma
-internal/config/        modello dei dati, validazione, salvataggio
-internal/status/        controllo periodico dei servizi
-internal/server/        API HTTP e pagine
-internal/webui/         interfaccia compilata, incorporata nel binario
-ui/                     interfaccia (Svelte 5, TypeScript, Vite)
-scripts/setup.sh        installazione e aggiornamento dentro la LXC
-install.sh              installer per l'host Proxmox
+cmd/homie/              program entry point
+internal/config/        data model, validation, persistence
+internal/status/        periodic service checks
+internal/server/        HTTP API and pages
+internal/webui/         compiled interface, embedded in the binary
+ui/                     interface (Svelte 5, TypeScript, Vite)
+scripts/setup.sh        install and update inside the LXC
+install.sh              installer for the Proxmox host
 ```
 
-Il risultato della build è un unico eseguibile senza dipendenze, per amd64 e arm64.
+The build output is a single dependency-free executable, for amd64 and arm64.
 
-## Sviluppo
+## Development
 
-Servono Go 1.22 o successivo e Node.js 22.
+Requires Go 1.22 or later and Node.js 22.
 
 ```bash
-make dev     # backend su :8080, interfaccia con ricaricamento automatico su :5173
-make build   # compila interfaccia e binario in bin/homie
-make run     # compila e avvia con i dati in ./data
-make test    # esegue i test Go
+make dev     # backend on :8080, interface with live reload on :5173
+make build   # builds the interface and the binary into bin/homie
+make run     # builds and starts with data in ./data
+make test    # runs the Go tests
 ```
 
-## Pubblicare una versione
+## Publishing a release
 
 ```bash
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-GitHub Actions compila interfaccia e binari e crea la release con i file `homie-linux-amd64`, `homie-linux-arm64` e `SHA256SUMS`, che sono quelli scaricati da installer e aggiornamento.
+GitHub Actions builds the interface and the binaries and creates the release with the files `homie-linux-amd64`, `homie-linux-arm64`, and `SHA256SUMS`, which are the ones downloaded by the installer and the updater.
 
 ## API
 
-| Metodo | Percorso | Descrizione |
+| Method | Path | Description |
 | --- | --- | --- |
-| GET | `/api/config` | Configurazione completa |
-| PUT | `/api/config` | Sostituisce la configurazione (validata) |
-| GET | `/api/status` | Ultimo stato di ogni servizio controllato |
-| GET | `/api/version` | Versione in esecuzione |
+| GET | `/api/config` | Full configuration |
+| PUT | `/api/config` | Replaces the configuration (validated) |
+| GET | `/api/status` | Latest status of every checked service |
+| GET | `/api/version` | Running version |
