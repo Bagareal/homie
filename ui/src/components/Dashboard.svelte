@@ -2,6 +2,7 @@
   import { onMount, tick } from 'svelte'
   import { app } from '../lib/state.svelte'
   import { barHeight } from '../lib/barHeight'
+  import { mobile, setTab } from '../lib/mobile.svelte'
   import { clearDraft, loadDraft, type ItemFields } from '../lib/draft'
   import type { Item, Widget as WidgetT } from '../lib/types'
   import Shelf from './Shelf.svelte'
@@ -73,6 +74,11 @@
     }
     return out
   })
+  // On a phone the widgets get their own tab so they don't push the services
+  // down the page. A search always looks at services.
+  const tabbed = $derived(mobile.narrow && cfg.widgets.length > 0)
+  const tab = $derived(!tabbed ? 'all' : q ? 'services' : mobile.tab)
+  const shown = $derived(tab === 'all' ? blocks : blocks.filter((b) => (b.kind === 'group') === (tab === 'services')))
   const blockKey = (b: Block) => (b.kind === 'group' ? `g${b.v.group.id}` : b.kind === 'widget' ? `w${b.w.id}` : `s${b.list[0].id}`)
 
   const summary = $derived.by(() => {
@@ -174,6 +180,12 @@
 </header>
 
 <div class="scroller">
+{#if tabbed}
+  <div class="tabs" role="tablist" aria-label="Dashboard view">
+    <button type="button" role="tab" aria-selected={tab === 'services'} class:active={tab === 'services'} onclick={() => { app.query = ''; setTab('services') }}>Services</button>
+    <button type="button" role="tab" aria-selected={tab === 'widgets'} class:active={tab === 'widgets'} onclick={() => setTab('widgets')}>Widgets</button>
+  </div>
+{/if}
 {#if app.editing && (cfg.groups.length > 0 || cfg.widgets.length > 0)}
   <p class="edit-hint">Drag tiles, group labels and widgets to reorder them. Click an item to edit it.</p>
 {/if}
@@ -194,8 +206,10 @@
     </div>
   {:else if q && visible.length === 0}
     <p class="empty">No service matches “{app.query}”.</p>
+  {:else if shown.length === 0}
+    <p class="empty">{tab === 'widgets' ? 'No widgets yet.' : 'No groups yet.'}</p>
   {:else}
-    {#each blocks as b (blockKey(b))}
+    {#each shown as b (blockKey(b))}
       {#if b.kind === 'group'}
         <Shelf
           group={b.v.group}

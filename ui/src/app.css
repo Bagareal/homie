@@ -801,6 +801,69 @@ label.check {
     padding: 14px 14px 10px;
   }
 
+  /* Services / Widgets switch, stuck just under the top bar. */
+  .tabs {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    gap: 6px;
+    padding: 8px 12px;
+    background: var(--bg);
+  }
+
+  .tabs button {
+    flex: 1;
+    padding: 9px 12px;
+    border-radius: 8px;
+    font-weight: 600;
+  }
+
+  .tabs button.active {
+    background: var(--text);
+    border-color: var(--text);
+    color: var(--bg);
+  }
+
+  /* Everything centered: group titles, the tiles in a group, and a short last row. */
+  .tape,
+  .grid {
+    justify-content: center;
+  }
+
+  .tape {
+    text-align: center;
+  }
+
+  .text {
+    justify-content: center;
+  }
+
+  .tape-heading {
+    margin: 0;
+    width: 100%;
+  }
+
+  button.tape.fold {
+    width: 100%;
+    cursor: pointer;
+    padding: 6px 0;
+  }
+
+  .chevron {
+    flex-shrink: 0;
+    width: 7px;
+    height: 7px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(45deg) translate(-2px, -2px);
+    transition: transform 0.15s ease;
+  }
+
+  .chevron.folded {
+    transform: rotate(-45deg);
+  }
+
   .search {
     order: 5;
     width: 100%;

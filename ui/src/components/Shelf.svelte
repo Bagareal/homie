@@ -1,5 +1,6 @@
 <script lang="ts">
   import { app } from '../lib/state.svelte'
+  import { mobile, toggleFold } from '../lib/mobile.svelte'
   import type { Group, Item } from '../lib/types'
   import Tile from './Tile.svelte'
   import EditIcon from './EditIcon.svelte'
@@ -17,6 +18,11 @@
     onAddItem: () => void
     onEditGroup: () => void
   } = $props()
+
+  // Phone only: tapping the title folds the group (never while editing, where
+  // the title is the handle for moving and renaming, nor while searching).
+  const foldable = $derived(mobile.narrow && !app.editing)
+  const folded = $derived(foldable && !app.query.trim() && mobile.folded.includes(group.id))
 
   let groupDrop = $state<'before' | 'after' | null>(null)
   let gridOver = $state(false)
@@ -96,10 +102,18 @@
       <span class="tape-text">{group.name}</span>
       <EditIcon />
     </button>
+  {:else if foldable}
+    <h2 class="tape-heading">
+      <button type="button" class="tape fold" aria-expanded={!folded} onclick={() => toggleFold(group.id)}>
+        <span class="chevron" class:folded aria-hidden="true"></span>
+        <span class="tape-text">{group.name}</span>
+      </button>
+    </h2>
   {:else}
     <h2 class="tape"><span class="tape-text">{group.name}</span></h2>
   {/if}
 
+  {#if !folded}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="grid"
@@ -117,4 +131,5 @@
       <p class="hint">No services in this group.</p>
     {/if}
   </div>
+  {/if}
 </section>
