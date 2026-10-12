@@ -30,7 +30,7 @@
   })
 
   let editing = $state(false)
-  let draft = $state('')
+  let draft = $state<string | number | null>('')
   let box: HTMLInputElement | undefined = $state()
 
   async function startEdit() {
@@ -43,8 +43,10 @@
   function finishEdit(apply: boolean) {
     if (!editing) return
     editing = false
-    const n = Math.round(Number(draft))
-    if (!apply || draft.trim() === '' || Number.isNaN(n)) return
+    // A number input binds its value as a number (or null when empty), not a string.
+    const raw = String(draft ?? '').trim()
+    const n = Math.round(Number(raw))
+    if (!apply || raw === '' || Number.isNaN(n)) return
     live = Math.min(max, Math.max(min, n))
     oninput(live)
     oncommit(live)
