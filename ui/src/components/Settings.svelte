@@ -184,26 +184,31 @@
     <section>
       <h2>Colors</h2>
       <ColorField label="Page background" cssVar="--bg" theme={s.theme} value={s.backgroundColor} onpreview={(v) => preview('backgroundColor', v)} oncommit={commit} />
-      <ColorField label="Tile background" cssVar="--tile" theme={s.theme} value={s.tileColor} onpreview={(v) => preview('tileColor', v)} oncommit={commit} />
-      <ColorField label="Tile hover" cssVar="--tile-hover" theme={s.theme} value={s.hoverColor} onpreview={(v) => preview('hoverColor', v)} oncommit={commit} />
       <ColorField label="Panels" cssVar="--shelf" theme={s.theme} value={s.panelColor} onpreview={(v) => preview('panelColor', v)} oncommit={commit} />
       <ColorField label="Accent" cssVar="--accent" theme={s.theme} value={s.accentColor} onpreview={(v) => preview('accentColor', v)} oncommit={commit} />
-      {#if s.layout === 'grid'}
-        <ColorField label="Group card" cssVar="--shelf" theme={s.theme} value={s.cardColor} onpreview={(v) => preview('cardColor', v)} oncommit={commit} />
-      {/if}
-      <p class="hint">Tile hover is a tile's color under the pointer; Panels is the background of the settings sections and dialogs. Pick a color or type its hex code, for example to copy one from another field. "Default" means the theme's own color (light or dark, depending on Theme above).</p>
+      <p class="hint">Panels is the background of the settings sections and dialogs. Accent colors the group titles and the drag markers. Pick a color or type its hex code, for example to copy one from another field. "Default" means the theme's own color (light or dark, depending on Theme above).</p>
     </section>
 
     <section>
-      <h2>Tiles and groups</h2>
-      <ColorField label="Tile text" cssVar="--text" theme={s.theme} value={s.tileTextColor} onpreview={(v) => preview('tileTextColor', v)} oncommit={commit} />
-      <ColorField label="Tile text on hover" cssVar="--text" theme={s.theme} value={s.tileTextHoverColor} onpreview={(v) => preview('tileTextHoverColor', v)} oncommit={commit} />
-      <ColorField label="Tile border" cssVar="--line" theme={s.theme} value={s.tileBorderColor} onpreview={(v) => preview('tileBorderColor', v)} oncommit={commit} />
-      <ColorField label="Group border" cssVar={s.layout === 'grid' ? '--line' : '--accent'} theme={s.theme} value={s.groupBorderColor} onpreview={(v) => preview('groupBorderColor', v)} oncommit={commit} />
+      <h2>Tiles</h2>
+      <ColorField label="Background" cssVar="--tile" theme={s.theme} value={s.tileColor} onpreview={(v) => preview('tileColor', v)} oncommit={commit} />
+      <ColorField label="Background on hover" cssVar="--tile-hover" theme={s.theme} value={s.hoverColor} onpreview={(v) => preview('hoverColor', v)} oncommit={commit} />
+      <ColorField label="Text" cssVar="--text" theme={s.theme} value={s.tileTextColor} onpreview={(v) => preview('tileTextColor', v)} oncommit={commit} />
+      <ColorField label="Text on hover" cssVar="--text" theme={s.theme} value={s.tileTextHoverColor} onpreview={(v) => preview('tileTextHoverColor', v)} oncommit={commit} />
+      <ColorField label="Border" cssVar="--line" theme={s.theme} value={s.tileBorderColor} onpreview={(v) => preview('tileBorderColor', v)} oncommit={commit} />
+      <Slider label="Border width" unit="px" min={0} max={8} value={s.tileBorderWidth ?? 1} oninput={(v) => preview('tileBorderWidth', v)} oncommit={commit} />
       <ColorField label="Hover glow" cssVar="--text" theme={s.theme} value={s.glowColor} onpreview={(v) => preview('glowColor', v)} oncommit={commit} />
-      <Slider label="Tile border width" unit="px" min={0} max={8} value={s.tileBorderWidth ?? 1} oninput={(v) => preview('tileBorderWidth', v)} oncommit={commit} />
-      <Slider label="Group border width" unit="px" min={0} max={8} value={s.groupBorderWidth ?? 1} oninput={(v) => preview('groupBorderWidth', v)} oncommit={commit} />
-      <p class="hint">The group border is the card outline in the grid layout and the line under each group in the list layout. A width of 0 hides the border. Without a custom glow color, the glow is a soft shade of the text color.</p>
+      <p class="hint">A border width of 0 hides the border. Without a custom glow color, the glow is a soft shade of the text color.</p>
+    </section>
+
+    <section>
+      <h2>Groups</h2>
+      {#if s.layout === 'grid'}
+        <ColorField label="Card background" cssVar="--shelf" theme={s.theme} value={s.cardColor} onpreview={(v) => preview('cardColor', v)} oncommit={commit} />
+      {/if}
+      <ColorField label="Border" cssVar={s.layout === 'grid' ? '--line' : '--accent'} theme={s.theme} value={s.groupBorderColor} onpreview={(v) => preview('groupBorderColor', v)} oncommit={commit} />
+      <Slider label="Border width" unit="px" min={0} max={8} value={s.groupBorderWidth ?? 1} oninput={(v) => preview('groupBorderWidth', v)} oncommit={commit} />
+      <p class="hint">The border is the card outline in the grid layout and the line under each group in the list layout. The card background applies to the grid layout only.</p>
     </section>
 
     <section>
