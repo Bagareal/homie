@@ -84,7 +84,7 @@ type Group struct {
 type Widget struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
-	// Kind is the data source; only "glances" exists so far.
+	// Kind is the data source: "glances" or "truenas".
 	Kind     string `json:"kind"`
 	URL      string `json:"url"`
 	Username string `json:"username,omitempty"`
@@ -124,7 +124,7 @@ type Widget struct {
 // Row is one line of a widget.
 type Row struct {
 	ID string `json:"id"`
-	// Type is one of RowTypes.
+	// Type is one of RowTypes[widget kind].
 	Type string `json:"type"`
 	// Key picks what the row is about: a mount point (disk), a sensor label
 	// (temp) or an interface name (network). Empty = all disks, the CPU
@@ -143,8 +143,11 @@ const (
 	maxWidgetRows = 30
 )
 
-// RowTypes lists the kinds of row a widget can have.
-var RowTypes = []string{"cpu", "mem", "swap", "load", "uptime", "temp", "disk", "network"}
+// RowTypes lists the kinds of row each kind of widget can have.
+var RowTypes = map[string][]string{
+	"glances": {"cpu", "mem", "swap", "load", "uptime", "temp", "disk", "network"},
+	"truenas": {"cpu", "mem", "load", "uptime", "version", "pool", "drive", "alerts"},
+}
 
 type Config struct {
 	Title    string   `json:"title"`
@@ -427,12 +430,16 @@ func (c Config) validateWidgets(seen map[string]bool) error {
 		if w.Name == "" || len(w.Name) > 60 {
 			return errors.New("every widget needs a name (60 characters max)")
 		}
-		if w.Kind != "glances" {
+		if _, ok := RowTypes[w.Kind]; !ok {
 			return fmt.Errorf("invalid kind for widget %q: %q", w.Name, w.Kind)
 		}
 		u, err := url.Parse(w.URL)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || len(w.URL) > 300 {
 			return fmt.Errorf("invalid address for widget %q: must start with http:// or https://", w.Name)
+		}
+		if w.Kind == "truenas" && u.Scheme != "https" {
+			// TrueNAS revokes an API key that is sent without TLS.
+			return fmt.Errorf("widget %q: a TrueNAS address must start with https://", w.Name)
 		}
 		if len(w.Username) > 100 || len(w.Password) > 200 {
 			return fmt.Errorf("username or password of widget %q is too long", w.Name)
@@ -474,8 +481,8 @@ func validateRows(w Widget) error {
 			return fmt.Errorf("widget %q has a row with a missing or duplicate id", w.Name)
 		}
 		ids[r.ID] = true
-		if !slices.Contains(RowTypes, r.Type) {
-			return fmt.Errorf("widget %q has a row of unknown type %q", w.Name, r.Type)
+		if !slices.Contains(RowTypes[w.Kind], r.Type) {
+			return fmt.Errorf("widget %q has a row of unsupported type %q", w.Name, r.Type)
 		}
 		if len(r.Key) > 200 || len(r.Name) > 60 {
 			return fmt.Errorf("widget %q has a row whose name or key is too long", w.Name)

@@ -10,13 +10,15 @@ import (
 
 	"github.com/Bagareal/homie/internal/config"
 	"github.com/Bagareal/homie/internal/glances"
+	"github.com/Bagareal/homie/internal/truenas"
 )
 
 // widgetCache keeps each widget's last reading for half its refresh interval,
 // so several open tabs (or a quick reload) share one request to the host
 // instead of each making their own.
 type widgetCache struct {
-	client  *glances.Client
+	glances *glances.Client
+	truenas *truenas.Client
 	mu      sync.Mutex
 	entries map[string]*widgetEntry
 }
@@ -24,33 +26,50 @@ type widgetCache struct {
 type widgetEntry struct {
 	mu     sync.Mutex // held while fetching, so concurrent callers wait for one fetch
 	key    string     // what the reading was made for; a changed widget is read again
-	result glances.Result
+	result any        // glances.Result or truenas.Result: the same JSON envelope, different data
 	at     time.Time
 }
 
 func newWidgetCache() *widgetCache {
-	return &widgetCache{client: glances.New(), entries: map[string]*widgetEntry{}}
+	return &widgetCache{glances: glances.New(), truenas: truenas.New(), entries: map[string]*widgetEntry{}}
 }
 
 // metricsOf lists which groups of values the rows of a widget need, so a
 // widget that only shows the CPU never asks the host for its disks.
-func metricsOf(rows []config.Row) []string {
+func metricsOf(kind string, rows []config.Row) []string {
 	need := map[string]bool{}
 	for _, r := range rows {
-		switch r.Type {
-		case "cpu":
+		switch {
+		case kind == "truenas":
+			switch r.Type {
+			case "uptime", "load", "version":
+				need["info"] = true
+			case "mem":
+				need["mem"], need["info"] = true, true // the installed memory comes from system.info
+			case "pool":
+				need["pools"] = true
+			case "drive":
+				need["drives"] = true
+			default: // cpu, alerts
+				need[r.Type] = true
+			}
+		case r.Type == "cpu":
 			need["cpu"] = r.Load || need["cpu"]
 			need["sensors"] = r.Temp || need["sensors"]
-		case "temp":
+		case r.Type == "temp":
 			need["sensors"] = true
-		case "disk":
+		case r.Type == "disk":
 			need["disks"] = true
 		default: // mem, swap, load, uptime, network
 			need[r.Type] = true
 		}
 	}
+	all := glances.Metrics
+	if kind == "truenas" {
+		all = truenas.Metrics
+	}
 	var out []string
-	for _, m := range glances.Metrics { // a stable order
+	for _, m := range all { // a stable order
 		if need[m] {
 			out = append(out, m)
 		}
@@ -58,16 +77,21 @@ func metricsOf(rows []config.Row) []string {
 	return out
 }
 
-func targetOf(w config.Widget) glances.Target {
-	return glances.Target{URL: w.URL, Username: w.Username, Password: w.Password, Metrics: metricsOf(w.Rows)}
+// fetch reads a widget's host once, whatever its kind.
+func (c *widgetCache) fetch(ctx context.Context, w config.Widget) any {
+	metrics := metricsOf(w.Kind, w.Rows)
+	if w.Kind == "truenas" {
+		return c.truenas.Fetch(ctx, truenas.Target{URL: w.URL, Username: w.Username, APIKey: w.Password, Metrics: metrics})
+	}
+	return c.glances.Fetch(ctx, glances.Target{URL: w.URL, Username: w.Username, Password: w.Password, Metrics: metrics})
 }
 
 // cacheKey changes whenever anything that affects the reading does.
 func cacheKey(w config.Widget) string {
-	return strings.Join([]string{w.URL, w.Username, w.Password, strings.Join(metricsOf(w.Rows), ",")}, "\x01")
+	return strings.Join([]string{w.Kind, w.URL, w.Username, w.Password, strings.Join(metricsOf(w.Kind, w.Rows), ",")}, "\x01")
 }
 
-func (c *widgetCache) get(ctx context.Context, w config.Widget) glances.Result {
+func (c *widgetCache) get(ctx context.Context, w config.Widget) any {
 	c.mu.Lock()
 	e := c.entries[w.ID]
 	if e == nil {
@@ -82,15 +106,15 @@ func (c *widgetCache) get(ctx context.Context, w config.Widget) glances.Result {
 	if e.key == key && time.Since(e.at) < time.Duration(w.Refresh)*time.Second/2 {
 		return e.result
 	}
-	e.result = c.client.Fetch(ctx, targetOf(w))
+	e.result = c.fetch(ctx, w)
 	e.key = key
 	e.at = time.Now()
 	return e.result
 }
 
 // all reads every widget at once and forgets the ones that no longer exist.
-func (c *widgetCache) all(ctx context.Context, widgets []config.Widget) map[string]glances.Result {
-	out := make(map[string]glances.Result, len(widgets))
+func (c *widgetCache) all(ctx context.Context, widgets []config.Widget) map[string]any {
+	out := make(map[string]any, len(widgets))
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	live := make(map[string]bool, len(widgets))
@@ -122,12 +146,13 @@ func (s *Server) getWidgets(w http.ResponseWriter, r *http.Request) {
 }
 
 // testWidget checks a connection from the editor before it is saved and reads
-// everything the host offers, so the editor can list its disks, sensors and
-// network cards. A blank password falls back to the one stored for the widget,
-// since the browser never has it.
+// everything the host offers, so the editor can list its disks, sensors, pools
+// and network cards. A blank password falls back to the one stored for the
+// widget, since the browser never has it.
 func (s *Server) testWidget(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ID       string `json:"id"`
+		Kind     string `json:"kind"`
 		URL      string `json:"url"`
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -135,29 +160,49 @@ func (s *Server) testWidget(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	probe := config.Widget{ID: "probe", Name: "probe", Kind: "glances", URL: strings.TrimSpace(req.URL), Rows: []config.Row{}}
+	if req.Kind == "" {
+		req.Kind = "glances"
+	}
+	probe := config.Widget{ID: "probe", Name: "probe", Kind: req.Kind, URL: strings.TrimSpace(req.URL), Rows: []config.Row{}}
 	probe.Refresh, probe.Width, probe.Opacity = 5, 300, 100
 	if err := (config.Config{Settings: config.Default().Settings, Widgets: []config.Widget{probe}}).Validate(); err != nil {
-		writeError(w, http.StatusBadRequest, "enter a valid address, starting with http:// or https://")
+		msg := "enter a valid address, starting with http:// or https://"
+		if req.Kind == "truenas" {
+			msg = "enter a valid address, starting with https:// (TrueNAS revokes an API key sent over plain http)"
+		}
+		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
 	pw := req.Password
 	if pw == "" && req.ID != "" {
+		// Only for the same address and username: otherwise anyone who can open
+		// Homie could send the stored password to a server of their own.
 		for _, saved := range s.store.Get().Widgets {
-			if saved.ID == req.ID && saved.URL == probe.URL && saved.Username == req.Username {
+			if saved.ID == req.ID && saved.Kind == req.Kind && saved.URL == probe.URL && saved.Username == req.Username {
 				pw = saved.Password
 			}
 		}
 	}
-	target := glances.Target{URL: probe.URL, Username: req.Username, Password: pw}
-	version, err := s.widgets.client.Ping(r.Context(), target)
+
+	if req.Kind == "truenas" {
+		t := truenas.Target{URL: probe.URL, Username: req.Username, APIKey: pw}
+		version, err := s.widgets.truenas.Ping(r.Context(), t)
+		if err != nil {
+			writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
+			return
+		}
+		t.Metrics = truenas.Metrics
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "version": version, "data": s.widgets.truenas.Fetch(r.Context(), t).Data})
+		return
+	}
+	t := glances.Target{URL: probe.URL, Username: req.Username, Password: pw}
+	version, err := s.widgets.glances.Ping(r.Context(), t)
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
-	target.Metrics = glances.Metrics
-	reading := s.widgets.client.Fetch(r.Context(), target)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "version": version, "data": reading.Data})
+	t.Metrics = glances.Metrics
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "version": version, "data": s.widgets.glances.Fetch(r.Context(), t).Data})
 }
 
 func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {

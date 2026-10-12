@@ -42,10 +42,12 @@ export interface Settings {
   cardOpacity: number
 }
 
-export type RowType = 'cpu' | 'mem' | 'swap' | 'load' | 'uptime' | 'temp' | 'disk' | 'network'
+export type WidgetKind = 'glances' | 'truenas'
+export type RowType = 'cpu' | 'mem' | 'swap' | 'load' | 'uptime' | 'temp' | 'disk' | 'network' | 'version' | 'pool' | 'drive' | 'alerts'
 
-// One line of a widget. `key` picks a disk (mount point), sensor (label) or
-// network card (name); empty = all disks, the CPU sensor, the physical cards.
+// One line of a widget. `key` picks a disk (mount point), sensor (label),
+// network card, pool or drive (name); empty = all of them, or the CPU sensor /
+// the physical cards / the hottest drive.
 export interface Row {
   id: string
   type: RowType
@@ -59,7 +61,7 @@ export interface Row {
 export interface Widget {
   id: string
   name: string
-  kind: 'glances'
+  kind: WidgetKind
   url: string
   username?: string
   // Write-only: the server never sends it back, only hasPassword.
@@ -104,6 +106,20 @@ export interface HostData {
   sensors?: { label: string; value: number }[]
   disks?: (Usage & { mount: string })[]
   network?: { name: string; rx: number; tx: number; virtual?: boolean; bridge?: boolean }[]
+  // TrueNAS only.
+  version?: string
+  hostname?: string
+  pools?: {
+    name: string
+    status: string
+    healthy: boolean
+    percent: number
+    used: number
+    total: number
+    scan?: { function?: string; state?: string; end?: string; percent?: number; errors?: number }
+  }[]
+  drives?: { name: string; model?: string; pool?: string; temp?: number }[]
+  alerts?: { count: number; level?: string; items?: { level: string; text: string }[] }
 }
 
 export interface WidgetData {

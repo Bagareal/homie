@@ -71,6 +71,14 @@ Homie's server reads the Glances REST API (versions 4 and 3), so the browser nev
 
 A password is stored only on the server: it is never sent back to the browser and is not included in exported backups. Changing the address or username removes it. Glances' basic authentication travels unencrypted over http, so use it on a trusted network.
 
+### TrueNAS widgets
+
+Choose the **TrueNAS** type when adding a widget (TrueNAS 25.04 or later). Homie talks to its JSON-RPC API over a WebSocket (the older REST API is deprecated and removed in TrueNAS 26) using an API key, so it needs an `https://` address: TrueNAS revokes any API key that is sent without TLS, so Homie refuses plain `http://` for this type. The certificate is not verified, so a self-signed one works.
+
+Create the key in TrueNAS under *Credentials → API Keys*, ideally for a dedicated user that has only the *Readonly Admin* role. Paste it into the widget; it is stored on the Homie server and never sent back to the browser or exported. If the login is refused, also enter the name of the user the key belongs to.
+
+Rows available: every pool (health, space used, last scrub in the tooltip), alerts (the count of undismissed ones, red when serious), the hottest drive or a chosen one, CPU, memory, load average, uptime and the TrueNAS version. "Test connection" lists your pools and drives to pick from.
+
 ## Appearance
 
 The Appearance section in Settings lets you customize:
@@ -94,6 +102,7 @@ cmd/homie/              program entry point
 internal/config/        data model, validation, persistence
 internal/status/        periodic service checks
 internal/glances/       reads host metrics from the Glances API (widgets)
+internal/truenas/       reads a TrueNAS system over its JSON-RPC WebSocket API (widgets)
 internal/server/        HTTP API and pages
 internal/webui/         compiled interface, embedded in the binary
 ui/                     interface (Svelte 5, TypeScript, Vite)

@@ -35,7 +35,7 @@
       .join(';'),
   )
 
-  type Line = { key: string; label: string; value: string; pct?: number; hot?: boolean; title?: string }
+  type Line = { key: string; label: string; value: string; pct?: number; hot?: boolean; bad?: boolean; title?: string }
 
   const labels: Record<RowType, string> = {
     cpu: 'CPU',
@@ -46,6 +46,10 @@
     temp: 'Temperature',
     disk: 'Disk',
     network: 'Network',
+    version: 'Version',
+    pool: 'Pool',
+    drive: 'Drive',
+    alerts: 'Alerts',
   }
 
   // A temperature has no natural 100%: the bar fills to 100 °C and warns from 80.
@@ -148,6 +152,53 @@
           }
           break
         }
+        case 'version':
+          out.push(d.version ? { key: r.id, label, value: d.version.replace(/^TrueNAS-(SCALE-)?/, ''), title: d.version } : na())
+          break
+        case 'pool': {
+          const pools = r.key ? d.pools?.filter((p) => p.name === r.key) : d.pools
+          if (!pools?.length) out.push({ key: r.id, label: r.name || r.key || labels.pool, value: 'n/a' })
+          else
+            for (const p of pools) {
+              const s = p.scan
+              const scrub = s?.function
+                ? `${s.function === 'SCRUB' ? 'Last scrub' : s.function}: ${(s.state ?? '').toLowerCase()}${s.end ? ` on ${new Date(s.end).toLocaleDateString()}` : ''}, ${s.errors ?? 0} errors`
+                : 'No scrub yet'
+              out.push({
+                key: `${r.id}:${p.name}`,
+                label: r.key ? r.name || p.name : p.name,
+                value: `${p.healthy ? '' : `${p.status} · `}${bytes(p.used)} / ${bytes(p.total)}`,
+                pct: p.percent,
+                hot: !p.healthy || p.percent >= 90,
+                bad: !p.healthy,
+                title: `${p.status}. ${scrub}`,
+              })
+            }
+          break
+        }
+        case 'drive': {
+          const warm = (d.drives ?? []).filter((x) => x.temp !== undefined)
+          const pick = r.key ? d.drives?.find((x) => x.name === r.key) : warm.reduce<(typeof warm)[number] | undefined>((a, x) => (!a || x.temp! > a.temp! ? x : a), undefined)
+          const l = r.name || r.key || 'Hottest drive'
+          if (pick?.temp === undefined) out.push({ key: r.id, label: l, value: 'n/a' })
+          else out.push({ key: r.id, label: l, value: `${Math.round(pick.temp)} °C`, pct: pick.temp, hot: pick.temp >= 55, title: `${pick.name}${pick.model ? ` (${pick.model})` : ''}` })
+          break
+        }
+        case 'alerts': {
+          const a = d.alerts
+          if (!a) out.push(na())
+          else {
+            const serious = a.count > 0 && ['ERROR', 'CRITICAL', 'ALERT', 'EMERGENCY'].includes(a.level ?? '')
+            out.push({
+              key: r.id,
+              label,
+              value: a.count === 0 ? 'None' : `${a.count} · ${(a.level ?? '').toLowerCase()}`,
+              bad: serious,
+              title: (a.items ?? []).map((i) => `${i.level}: ${i.text}`).join('\n'),
+            })
+          }
+          break
+        }
       }
     }
     return out
@@ -213,7 +264,7 @@
       {#each lines as r (r.key)}
         <div class="row" title={r.title}>
           <dt>{r.label}</dt>
-          <dd>{r.value}</dd>
+          <dd class:bad={r.bad}>{r.value}</dd>
           {#if r.pct !== undefined}
             <div class="meter" role="presentation"><span class:hot={r.hot} style:width="{Math.min(100, Math.max(0, r.pct))}%"></span></div>
           {/if}
@@ -350,6 +401,9 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  dd.bad {
+    color: var(--down);
   }
   .meter {
     grid-column: 1 / -1;

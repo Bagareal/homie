@@ -237,7 +237,7 @@ func TestTestWidgetUsesTheStoredPasswordOnlyForTheSameAddress(t *testing.T) {
 }
 
 func TestMetricsOfAsksOnlyForWhatTheRowsNeed(t *testing.T) {
-	got := metricsOf([]config.Row{
+	got := metricsOf("glances", []config.Row{
 		{Type: "cpu", Temp: true}, // temperature only: no CPU reading needed
 		{Type: "disk", Key: "/"},
 		{Type: "disk"},
@@ -246,8 +246,15 @@ func TestMetricsOfAsksOnlyForWhatTheRowsNeed(t *testing.T) {
 	if want := "sensors,disks,network"; strings.Join(got, ",") != want {
 		t.Errorf("got %v, want %s", got, want)
 	}
-	got = metricsOf([]config.Row{{Type: "cpu", Load: true, Temp: true}, {Type: "uptime"}})
+	got = metricsOf("glances", []config.Row{{Type: "cpu", Load: true, Temp: true}, {Type: "uptime"}})
 	if want := "cpu,uptime,sensors"; strings.Join(got, ",") != want {
+		t.Errorf("got %v, want %s", got, want)
+	}
+}
+
+func TestMetricsOfForTrueNAS(t *testing.T) {
+	got := metricsOf("truenas", []config.Row{{Type: "pool"}, {Type: "mem"}, {Type: "alerts"}, {Type: "drive"}, {Type: "version"}})
+	if want := "info,mem,pools,drives,alerts"; strings.Join(got, ",") != want {
 		t.Errorf("got %v, want %s", got, want)
 	}
 }

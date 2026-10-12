@@ -26,7 +26,7 @@ export const getStatus = () => request<Record<string, Status>>('api/status')
 
 export const getWidgets = () => request<Record<string, WidgetData>>('api/widgets')
 
-export const testWidget = (w: { id?: string; url: string; username: string; password: string }) =>
+export const testWidget = (w: { id?: string; kind: string; url: string; username: string; password: string }) =>
   request<{ ok: boolean; version?: string; error?: string; data?: HostData }>('api/widgets/test', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

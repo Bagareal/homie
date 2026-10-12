@@ -3,7 +3,7 @@
   import * as api from '../lib/api'
   import { bytes } from '../lib/format'
   import { app, uid } from '../lib/state.svelte'
-  import type { HostData, Row, RowType, Widget, WidgetData } from '../lib/types'
+  import type { HostData, Row, RowType, Widget, WidgetData, WidgetKind } from '../lib/types'
   import ColorField from './ColorField.svelte'
   import Slider from './Slider.svelte'
   import WidgetView from './Widget.svelte'
@@ -22,7 +22,23 @@
     temp: 'Temperature',
     disk: 'Disk',
     network: 'Network',
+    version: 'Version',
+    pool: 'Pool',
+    drive: 'Drive temperature',
+    alerts: 'Alerts',
   }
+
+  const defaultRows = (kind: WidgetKind): Row[] =>
+    kind === 'truenas'
+      ? [
+          { id: uid(), type: 'pool' },
+          { id: uid() + 'a', type: 'alerts' },
+          { id: uid() + 'u', type: 'uptime' },
+        ]
+      : [
+          { id: uid(), type: 'cpu', load: true },
+          { id: uid() + 'm', type: 'mem' },
+        ]
 
   // svelte-ignore state_referenced_locally
   const saved = widgetId ? app.widget(widgetId) : undefined
@@ -32,10 +48,7 @@
     kind: 'glances',
     url: '',
     username: '',
-    rows: [
-      { id: uid(), type: 'cpu', load: true },
-      { id: uid() + 'm', type: 'mem' },
-    ],
+    rows: defaultRows('glances'),
     refresh: 5,
     width: 300,
     height: 0,
@@ -52,16 +65,44 @@
   // sensors and network cards, and to preview the widget with real values.
   let found = $state<HostData | null>(null)
 
+  const nas = $derived(w.kind === 'truenas')
   const dirty = $derived(JSON.stringify(w) !== initialJson)
+
+  // A new widget chooses its source first; changing it starts over.
+  function setKind(kind: WidgetKind) {
+    w.kind = kind
+    w.rows = defaultRows(kind)
+    w.password = ''
+    found = null
+    testResult = null
+  }
   const addressChanged = $derived(!!saved?.hasPassword && (normalizeUrl(w.url) !== saved.url || (w.username ?? '').trim() !== (saved.username ?? '')))
 
+  // TrueNAS is only ever reached over https (it revokes API keys sent without TLS).
   function normalizeUrl(raw: string): string {
     const v = raw.trim()
-    return v && !/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? `http://${v}` : v
+    return v && !/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? `${w.kind === 'truenas' ? 'https' : 'http'}://${v}` : v
   }
 
   // What the editor previews until the host has been read.
-  const sample: WidgetData = {
+  const sampleNAS: WidgetData = {
+    online: true,
+    updatedAt: '',
+    data: {
+      version: 'TrueNAS-25.10.1',
+      uptime: '12 days, 3:45:10',
+      cpu: 12,
+      mem: { percent: 48, used: 15 * 2 ** 30, total: 32 * 2 ** 30 },
+      load: { min1: 0.52, min5: 0.38, min15: 0.3, cores: 8 },
+      pools: [
+        { name: 'tank', status: 'ONLINE', healthy: true, percent: 62, used: 8.4 * 2 ** 40, total: 13.6 * 2 ** 40 },
+        { name: 'backup', status: 'ONLINE', healthy: true, percent: 93, used: 3.7 * 2 ** 40, total: 4 * 2 ** 40 },
+      ],
+      drives: [{ name: 'sda', model: 'WDC', pool: 'tank', temp: 38 }],
+      alerts: { count: 0 },
+    },
+  }
+  const sampleGlances: WidgetData = {
     online: true,
     updatedAt: '',
     data: {
@@ -79,6 +120,7 @@
       network: [{ name: 'eth0', rx: 1.4 * 2 ** 20, tx: 310 * 2 ** 10 }],
     },
   }
+  const sample = $derived(nas ? sampleNAS : sampleGlances)
   const live = $derived(widgetId ? app.widgetData[widgetId] : undefined)
   const previewData = $derived<WidgetData>(
     found ? { online: true, updatedAt: '', data: found } : live?.online && !addressChanged ? live : sample,
@@ -92,10 +134,10 @@
     if (!url) return void (silent || (testResult = { ok: false, text: 'Enter the address first.' }))
     testing = true
     try {
-      const r = await api.testWidget({ id: widgetId ?? undefined, url, username: (w.username ?? '').trim(), password: w.password ?? '' })
+      const r = await api.testWidget({ id: widgetId ?? undefined, kind: w.kind, url, username: (w.username ?? '').trim(), password: w.password ?? '' })
       if (r.ok) {
         found = r.data ?? null
-        testResult = { ok: true, text: `Connected${r.version ? ` (Glances ${r.version})` : ''}` }
+        testResult = { ok: true, text: `Connected${r.version ? ` (${nas ? '' : 'Glances '}${r.version})` : ''}` }
       } else if (!silent) testResult = { ok: false, text: r.error ?? 'Failed' }
     } catch (e) {
       if (!silent) testResult = { ok: false, text: (e as Error).message }
@@ -161,8 +203,9 @@
     try {
       const u = new URL(url)
       if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error()
+      if (nas && u.protocol !== 'https:') return void (error = 'A TrueNAS address must start with https:// (TrueNAS revokes an API key sent over plain http).')
     } catch {
-      return void (error = 'Enter a valid address, for example http://192.168.1.10:61208.')
+      return void (error = `Enter a valid address, for example ${nas ? 'https://truenas.local' : 'http://192.168.1.10:61208'}.`)
     }
     if (w.rows.length === 0) return void (error = 'Add at least one value to show.')
     const out: Widget = {
@@ -236,23 +279,36 @@
 
     <fieldset>
       <legend>Source</legend>
+      {#if !saved}
+        <label>
+          Type
+          <select value={w.kind} onchange={(e) => setKind(e.currentTarget.value as WidgetKind)}>
+            <option value="glances">Glances (any Linux host, e.g. Proxmox)</option>
+            <option value="truenas">TrueNAS (25.04 or later)</option>
+          </select>
+        </label>
+      {/if}
       <label>
         Name
         <!-- svelte-ignore a11y_autofocus -->
-        <input bind:value={w.name} maxlength="60" placeholder="Proxmox" autofocus />
+        <input bind:value={w.name} maxlength="60" placeholder={nas ? 'TrueNAS' : 'Proxmox'} autofocus />
       </label>
       <label>
-        Glances address
-        <input bind:value={w.url} placeholder="http://192.168.1.10:61208" inputmode="url" />
-        <small>The host must run Glances in web server mode (<code>glances -w</code>, port 61208 by default).</small>
+        {nas ? 'TrueNAS address' : 'Glances address'}
+        <input bind:value={w.url} placeholder={nas ? 'https://truenas.local' : 'http://192.168.1.10:61208'} inputmode="url" />
+        {#if nas}
+          <small>Must start with https://. The certificate is not checked, so a self-signed one works.</small>
+        {:else}
+          <small>The host must run Glances in web server mode (<code>glances -w</code>, port 61208 by default).</small>
+        {/if}
       </label>
       <div class="two">
         <label>
-          Username <small>(optional)</small>
+          Username <small>{nas ? '(only if the login is refused)' : '(optional)'}</small>
           <input bind:value={w.username} maxlength="100" autocomplete="off" />
         </label>
         <label>
-          Password <small>(optional)</small>
+          {nas ? 'API key' : 'Password'} {#if !nas}<small>(optional)</small>{/if}
           <input
             type="password"
             bind:value={w.password}
@@ -264,12 +320,16 @@
       </div>
       {#if saved?.hasPassword}
         {#if addressChanged}
-          <small>Changing the address or username removes the saved password: enter it again if the host needs one.</small>
+          <small>Changing the address or username removes the saved {nas ? 'API key' : 'password'}: enter it again if the host needs one.</small>
         {:else}
-          <label class="check"><input type="checkbox" bind:checked={w.clearPassword} /> Remove the saved password</label>
+          <label class="check"><input type="checkbox" bind:checked={w.clearPassword} /> Remove the saved {nas ? 'API key' : 'password'}</label>
         {/if}
       {/if}
-      <small>Glances only supports basic authentication, which is sent unencrypted over plain http. Use it on a trusted network.</small>
+      {#if nas}
+        <small>Create the key in TrueNAS under Credentials → API Keys, ideally for a user with only the Readonly Admin role. It is stored on the Homie server and never sent back to the browser.</small>
+      {:else}
+        <small>Glances only supports basic authentication, which is sent unencrypted over plain http. Use it on a trusted network.</small>
+      {/if}
       <div class="test">
         <button type="button" onclick={() => test()} disabled={testing}>{testing ? 'Testing…' : 'Test connection'}</button>
         {#if testResult}<span class:ok={testResult.ok} class:bad={!testResult.ok} role="status">{testResult.text}</span>{/if}
@@ -278,7 +338,7 @@
 
     <fieldset>
       <legend>Values</legend>
-      <small>Drag to reorder (or use the arrows). Disks, sensors and network cards can be chosen once the connection has been tested.</small>
+      <small>Drag to reorder (or use the arrows). {nas ? 'Pools and drives' : 'Disks, sensors and network cards'} can be chosen once the connection has been tested.</small>
       <ul class="rows">
         {#each w.rows as r, i (r.id)}
           <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -312,7 +372,7 @@
             <div class="rbody">
               <div class="rhead">
                 <strong>{typeLabels[r.type]}</strong>
-                {#if r.type === 'cpu'}
+                {#if r.type === 'cpu' && !nas}
                   <label class="check"><input type="checkbox" checked={r.load} onchange={(e) => setCpu(r, 'load', e.currentTarget.checked)} /> Load</label>
                   <label class="check"><input type="checkbox" checked={r.temp} onchange={(e) => setCpu(r, 'temp', e.currentTarget.checked)} /> Temperature</label>
                 {/if}
@@ -326,6 +386,10 @@
                   {@render keyOptions(r, 'CPU (automatic)', (found?.sensors ?? []).map((s) => ({ value: s.label, label: tempLabel(s) })))}
                 {:else if r.type === 'disk'}
                   {@render keyOptions(r, 'All disks', (found?.disks ?? []).map((d) => ({ value: d.mount, label: diskLabel(d) })))}
+                {:else if r.type === 'pool'}
+                  {@render keyOptions(r, 'All pools', (found?.pools ?? []).map((p) => ({ value: p.name, label: `${p.name} · ${p.status}` })))}
+                {:else if r.type === 'drive'}
+                  {@render keyOptions(r, 'Hottest drive', (found?.drives ?? []).map((d) => ({ value: d.name, label: `${d.name}${d.model ? ` · ${d.model}` : ''}${d.temp !== undefined ? ` · ${Math.round(d.temp)} °C` : ''}` })))}
                 {:else if r.type === 'network'}
                   {@render keyOptions(r, 'All physical cards (total)', (found?.network ?? []).map((n) => ({ value: n.name, label: n.virtual ? `${n.name} (virtual)` : n.bridge ? `${n.name} (bridge)` : n.name })))}
                 {/if}
@@ -334,8 +398,8 @@
                   maxlength="60"
                   placeholder={r.key || typeLabels[r.type]}
                   aria-label="Name shown for this value"
-                  disabled={r.type === 'disk' && !r.key}
-                  title={r.type === 'disk' && !r.key ? 'Pick one disk to give it a name' : ''}
+                  disabled={(r.type === 'disk' || r.type === 'pool') && !r.key}
+                  title={(r.type === 'disk' || r.type === 'pool') && !r.key ? 'Pick one to give it a name' : ''}
                 />
               </div>
             </div>
@@ -351,14 +415,35 @@
         }}
       >
         <option value="">+ Add a value…</option>
-        <option value="cpu">CPU</option>
-        <option value="mem">Memory</option>
-        <option value="swap">Swap</option>
-        <option value="load">Load average</option>
-        <option value="uptime">Uptime</option>
-        <option value="temp">Temperature (CPU)</option>
-        <option value="disk">All disks</option>
-        <option value="network">Network (all physical cards)</option>
+        {#if nas}
+          <option value="pool">All pools</option>
+          <option value="alerts">Alerts</option>
+          <option value="drive">Hottest drive</option>
+          <option value="cpu">CPU</option>
+          <option value="mem">Memory</option>
+          <option value="load">Load average</option>
+          <option value="uptime">Uptime</option>
+          <option value="version">TrueNAS version</option>
+          {#if found?.pools?.length}
+            <optgroup label="Detected pools">
+              {#each found.pools as p (p.name)}<option value="pool:{p.name}">{p.name} · {p.status}</option>{/each}
+            </optgroup>
+          {/if}
+          {#if found?.drives?.length}
+            <optgroup label="Detected drives">
+              {#each found.drives as d (d.name)}<option value="drive:{d.name}">{d.name}{d.model ? ` · ${d.model}` : ''}</option>{/each}
+            </optgroup>
+          {/if}
+        {:else}
+          <option value="cpu">CPU</option>
+          <option value="mem">Memory</option>
+          <option value="swap">Swap</option>
+          <option value="load">Load average</option>
+          <option value="uptime">Uptime</option>
+          <option value="temp">Temperature (CPU)</option>
+          <option value="disk">All disks</option>
+          <option value="network">Network (all physical cards)</option>
+        {/if}
         {#if found?.disks?.length}
           <optgroup label="Detected disks">
             {#each found.disks as d (d.mount)}<option value="disk:{d.mount}">{diskLabel(d)}</option>{/each}

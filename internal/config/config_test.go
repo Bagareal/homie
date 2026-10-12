@@ -421,3 +421,29 @@ func TestOldConfigWithoutWidgetsStillLoads(t *testing.T) {
 		t.Fatal("widgets should default to an empty list, not null")
 	}
 }
+
+func TestTrueNASWidgets(t *testing.T) {
+	c := widgetConfig()
+	c.Widgets[0].Kind = "truenas"
+	c.Widgets[0].URL = "https://truenas.local"
+	c.Widgets[0].Rows = []Row{{ID: "a", Type: "pool", Key: "tank"}, {ID: "b", Type: "alerts"}, {ID: "c", Type: "drive"}, {ID: "d", Type: "cpu", Load: true}}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("a TrueNAS widget should validate: %v", err)
+	}
+
+	c.Widgets[0].URL = "http://truenas.local"
+	if err := c.Validate(); err == nil {
+		t.Error("TrueNAS over plain http must be refused: it revokes the API key")
+	}
+	c.Widgets[0].URL = "https://truenas.local"
+
+	c.Widgets[0].Rows = []Row{{ID: "a", Type: "swap"}}
+	if err := c.Validate(); err == nil {
+		t.Error("a Glances-only row on a TrueNAS widget should be refused")
+	}
+	c = widgetConfig()
+	c.Widgets[0].Rows = []Row{{ID: "a", Type: "pool"}}
+	if err := c.Validate(); err == nil {
+		t.Error("a TrueNAS-only row on a Glances widget should be refused")
+	}
+}
