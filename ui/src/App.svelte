@@ -26,6 +26,8 @@
     if (cfg.settings.theme === 'auto') delete root.dataset.theme
     else root.dataset.theme = cfg.settings.theme
     root.dataset.density = cfg.settings.density
+    root.dataset.layout = cfg.settings.layout ?? 'list'
+    root.style.setProperty('--bar-opacity', String(cfg.settings.barOpacity ?? 100))
     document.title = cfg.title || 'Homie'
 
     const vars: [string, string | undefined][] = [

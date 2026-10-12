@@ -161,10 +161,10 @@ select {
   flex-wrap: wrap;
   align-items: center;
   gap: 12px 18px;
-  max-width: 1440px;
-  margin: 0 auto;
+  /* Full width, so it never ends up as a narrow strip on a big screen. */
+  --bar-bg: color-mix(in srgb, var(--bg) calc(var(--bar-opacity, 100) * 1%), transparent);
   padding: 18px 20px 14px;
-  background: var(--bg);
+  background: var(--bar-bg);
 }
 
 .bar::after {
@@ -174,7 +174,7 @@ select {
   right: 0;
   top: 100%;
   height: 20px;
-  background: linear-gradient(var(--bg), transparent);
+  background: linear-gradient(var(--bar-bg), transparent);
   pointer-events: none;
 }
 
@@ -308,6 +308,58 @@ button.tape:hover {
   margin: 0;
   color: var(--muted);
   align-self: center;
+}
+
+/* Grid layout: every group is a card, cards flow side by side. */
+
+:root[data-layout='grid'] .shelves {
+  max-width: none;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: stretch;
+  gap: 20px;
+}
+
+:root[data-layout='grid'] .shelf,
+:root[data-layout='grid'] .shelf:last-of-type {
+  --card-pad: 16px;
+  align-self: stretch;
+  align-items: stretch;
+  width: calc(var(--row-width) + 2 * var(--card-pad) + 2px);
+  padding: var(--card-pad);
+  background: var(--shelf);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+:root[data-layout='grid'] .shelf .tape,
+:root[data-layout='grid'] .shelf .grid {
+  width: 100%;
+}
+
+/* A card is always at least three rows tall, so cards line up evenly; a group
+   with more than 12 services just grows more rows. */
+:root[data-layout='grid'] .shelf .grid {
+  align-content: flex-start;
+  min-height: calc(3 * var(--tile-min) + 2 * var(--gap));
+}
+
+:root[data-layout='grid'] .shelf.drop-before {
+  box-shadow: -4px 0 0 var(--accent);
+}
+
+:root[data-layout='grid'] .shelf.drop-after {
+  box-shadow: 4px 0 0 var(--accent);
+}
+
+:root[data-layout='grid'] .empty,
+:root[data-layout='grid'] .add-group {
+  flex-basis: 100%;
+}
+
+:root[data-layout='grid'] .edit-hint {
+  max-width: none;
 }
 
 /* Tiles */

@@ -38,7 +38,9 @@
     if (app.drag?.kind !== 'group' || app.drag.id === group.id) return
     e.preventDefault()
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    groupDrop = e.clientY < r.top + r.height / 2 ? 'before' : 'after'
+    // Cards sit side by side in the grid layout, stacked in the list layout.
+    const before = app.config?.settings.layout === 'grid' ? e.clientX < r.left + r.width / 2 : e.clientY < r.top + r.height / 2
+    groupDrop = before ? 'before' : 'after'
   }
   function shelfDrop(e: DragEvent) {
     const d = app.drag

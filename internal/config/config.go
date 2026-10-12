@@ -34,6 +34,12 @@ type Settings struct {
 	// (fully opaque), matching every image uploaded before this setting
 	// existed. Below the image, BackgroundColor always stays full opacity.
 	BackgroundOpacity int `json:"backgroundOpacity,omitempty"`
+	// Layout is "list" (groups stacked in one column) or "grid" (groups as
+	// cards side by side).
+	Layout string `json:"layout"`
+	// BarOpacity is 1-100 for the top bar's background; 0 (omitted)
+	// normalizes to 100 (solid).
+	BarOpacity int `json:"barOpacity,omitempty"`
 }
 
 type Item struct {
@@ -66,6 +72,8 @@ func Default() Config {
 			CheckInterval:     60,
 			OpenInNewTab:      true,
 			BackgroundOpacity: 100,
+			Layout:            "list",
+			BarOpacity:        100,
 		},
 		Groups: []Group{},
 	}
@@ -85,6 +93,12 @@ func (c *Config) normalize() {
 	}
 	if c.Settings.BackgroundOpacity == 0 {
 		c.Settings.BackgroundOpacity = d.Settings.BackgroundOpacity
+	}
+	if c.Settings.Layout == "" {
+		c.Settings.Layout = d.Settings.Layout
+	}
+	if c.Settings.BarOpacity == 0 {
+		c.Settings.BarOpacity = d.Settings.BarOpacity
 	}
 	if c.Groups == nil {
 		c.Groups = []Group{}
@@ -109,6 +123,14 @@ func (c Config) Validate() error {
 	case "compact", "comfortable":
 	default:
 		return fmt.Errorf("invalid density: %q", c.Settings.Density)
+	}
+	switch c.Settings.Layout {
+	case "", "list", "grid": // "" = unset, filled in by normalize
+	default:
+		return fmt.Errorf("invalid layout: %q", c.Settings.Layout)
+	}
+	if o := c.Settings.BarOpacity; o < 0 || o > 100 {
+		return errors.New("top bar opacity must be between 0 and 100")
 	}
 	if c.Settings.CheckInterval < 10 || c.Settings.CheckInterval > 3600 {
 		return errors.New("the check interval must be between 10 and 3600 seconds")

@@ -1,5 +1,6 @@
 export type Theme = 'auto' | 'light' | 'dark'
 export type Density = 'compact' | 'comfortable'
+export type Layout = 'list' | 'grid'
 
 export interface Item {
   id: string
@@ -26,6 +27,8 @@ export interface Settings {
   accentColor?: string
   backgroundImage?: string
   backgroundOpacity: number
+  layout: Layout
+  barOpacity: number
 }
 
 export interface Config {

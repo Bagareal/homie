@@ -102,6 +102,10 @@
     ['comfortable', 'Comfortable'],
     ['compact', 'Compact'],
   ] as const
+  const layouts = [
+    ['list', 'List'],
+    ['grid', 'Grid'],
+  ] as const
   const intervals = [
     [15, '15 seconds'],
     [30, '30 seconds'],
@@ -141,6 +145,18 @@
         {/each}
       </div>
     </fieldset>
+    <fieldset>
+      <legend>Layout</legend>
+      <div class="seg">
+        {#each layouts as [value, label] (value)}
+          <label class:on={s.layout === value}>
+            <input type="radio" name="layout" {value} checked={s.layout === value} onchange={() => set('layout', value)} />
+            {label}
+          </label>
+        {/each}
+      </div>
+    </fieldset>
+    <p class="hint">List stacks the groups in one column. Grid shows each group as a card, side by side.</p>
     <div class="color-row">
       <label>
         Page background
@@ -183,6 +199,19 @@
       </label>
       <p class="hint">Lower it to let the page background color underneath show through.</p>
     {/if}
+
+    <label class="opacity-row">
+      Top bar opacity
+      <input
+        type="range"
+        min="1"
+        max="100"
+        value={s.barOpacity}
+        onchange={(e) => set('barOpacity', Number(e.currentTarget.value))}
+      />
+      <span>{s.barOpacity}%</span>
+    </label>
+    <p class="hint">Lower it to make the top bar see-through, so the page background shows behind it.</p>
   </section>
 
   <section>
