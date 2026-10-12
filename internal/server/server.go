@@ -15,6 +15,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Bagareal/homie/internal/config"
@@ -42,6 +43,8 @@ type Server struct {
 	dataDir string
 	version string
 	widgets *widgetCache
+	// bgMu keeps the clean-up of background images from racing an upload.
+	bgMu sync.Mutex
 }
 
 func New(store *config.Store, checker *status.Checker, ui fs.FS, dataDir, version string) *Server {
@@ -100,6 +103,7 @@ func (s *Server) putConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.checker.Wake()
+	s.gcBackgrounds() // a theme may have been deleted
 	writeJSON(w, http.StatusOK, s.store.Get().Redacted())
 }
 
@@ -152,6 +156,8 @@ func (s *Server) uploadBackground(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.bgMu.Lock()
+	defer s.bgMu.Unlock()
 	ext := ".jpg"
 	if format == "png" {
 		ext = ".png"
@@ -168,20 +174,46 @@ func (s *Server) uploadBackground(w http.ResponseWriter, r *http.Request) {
 	}
 
 	c := s.store.Get()
-	old := c.Settings.BackgroundImage
 	c.Settings.BackgroundImage = name
 	if err := s.store.Set(c); err != nil {
 		os.Remove(filepath.Join(dir, name))
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if old != "" && old != name {
-		os.Remove(filepath.Join(dir, old))
-	}
+	s.gcBackgroundsLocked() // the previous image goes unless a theme still uses it
 	writeJSON(w, http.StatusOK, s.store.Get().Redacted())
 }
 
+// gcBackgrounds deletes the image files nothing refers to any more: the ones in
+// <data>/backgrounds that are neither the current background nor used by a
+// saved theme.
+func (s *Server) gcBackgrounds() {
+	s.bgMu.Lock()
+	defer s.bgMu.Unlock()
+	s.gcBackgroundsLocked()
+}
+
+func (s *Server) gcBackgroundsLocked() {
+	c := s.store.Get()
+	keep := map[string]bool{c.Settings.BackgroundImage: true}
+	for _, t := range c.Themes {
+		keep[t.Appearance.BackgroundImage] = true
+	}
+	dir := filepath.Join(s.dataDir, "backgrounds")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if !e.IsDir() && !keep[e.Name()] {
+			os.Remove(filepath.Join(dir, e.Name()))
+		}
+	}
+}
+
 func (s *Server) deleteBackground(w http.ResponseWriter, _ *http.Request) {
+	s.bgMu.Lock()
+	defer s.bgMu.Unlock()
 	c := s.store.Get()
 	old := c.Settings.BackgroundImage
 	if old == "" {
@@ -193,7 +225,7 @@ func (s *Server) deleteBackground(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	os.Remove(filepath.Join(s.dataDir, "backgrounds", old))
+	s.gcBackgroundsLocked()
 	writeJSON(w, http.StatusOK, s.store.Get().Redacted())
 }
 

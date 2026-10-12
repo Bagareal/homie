@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick } from 'svelte'
+  import { app } from '../lib/state.svelte'
   import Slider from './Slider.svelte'
 
   let {
@@ -38,13 +39,32 @@
     return rgb + Math.round((pct / 100) * 255).toString(16).padStart(2, '0')
   }
 
+  // The color a CSS variable currently resolves to, as a hex code. A probe
+  // element is used (rather than reading the variable) because some defaults
+  // are themselves chains such as var(--tile-border, var(--line)).
+  function resolveVar(name: string): string | null {
+    const probe = document.createElement('span')
+    probe.style.color = `var(${name})`
+    document.body.appendChild(probe)
+    const css = getComputedStyle(probe).color
+    probe.remove()
+    const nums = (css.match(/-?\d*\.?\d+/g) ?? []).map(Number)
+    if (nums.length < 3) return null
+    const srgb = css.startsWith('color(') // components are 0-1 there, 0-255 in rgb()
+    const hex = (n: number) => Math.round(Math.min(255, Math.max(0, srgb ? n * 255 : n))).toString(16).padStart(2, '0')
+    const alpha = nums.length > 3 ? nums[3] : 1
+    return normalize(`#${hex(nums[0])}${hex(nums[1])}${hex(nums[2])}${alpha < 1 ? hex(alpha * (srgb ? 1 : 255)) : ''}`.replace(/^#?/, '#'))
+  }
+
   let fallback = $state('#000000')
   $effect(() => {
     void value
     void theme
     void cssVar
+    // The defaults follow the other settings (a theme can change them all at once).
+    void JSON.stringify(app.config?.settings)
     tick().then(() => {
-      const v = normalize(getComputedStyle(document.documentElement).getPropertyValue(cssVar))
+      const v = resolveVar(cssVar)
       if (v) fallback = v
     })
   })

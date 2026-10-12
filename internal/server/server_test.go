@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -125,7 +127,7 @@ func putWidget(t *testing.T, s *Server, glancesURL, password string) {
 	cfg := s.store.Get().Redacted()
 	cfg.Widgets = []config.Widget{{
 		ID: "w1", Name: "Proxmox", URL: glancesURL, Username: "glances", Password: password,
-		Rows: []config.Row{{ID: "r1", Type: "cpu", Load: true}}, Refresh: 5, Width: 300, Opacity: 100,
+		Rows: []config.Row{{ID: "r1", Type: "cpu", Load: true}}, Refresh: 5, Width: 300,
 	}}
 	if w := doJSON(t, s.Handler(), "PUT", "/api/config", cfg); w.Code != http.StatusOK {
 		t.Fatalf("put widget: %d %s", w.Code, w.Body.String())
@@ -256,5 +258,53 @@ func TestMetricsOfForTrueNAS(t *testing.T) {
 	got := metricsOf("truenas", []config.Row{{Type: "pool"}, {Type: "mem"}, {Type: "alerts"}, {Type: "drive"}, {Type: "version"}, {Type: "apps"}})
 	if want := "info,mem,pools,drives,alerts,apps"; strings.Join(got, ",") != want {
 		t.Errorf("got %v, want %s", got, want)
+	}
+}
+
+func TestBackgroundsStayWhileAThemeUsesThem(t *testing.T) {
+	s := newTestServer(t)
+	h := s.Handler()
+	dir := filepath.Join(s.dataDir, "backgrounds")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"bg-current.jpg", "bg-theme.jpg", "bg-orphan.jpg"} {
+		if err := os.WriteFile(filepath.Join(dir, n), []byte("x"), 0o640); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg := s.store.Get().Redacted()
+	cfg.Settings.BackgroundImage = "bg-current.jpg"
+	cfg.Themes = []config.Theme{{ID: "t1", Name: "Night", Appearance: config.Appearance{Theme: "dark", Density: "comfortable", Layout: "list", BackgroundImage: "bg-theme.jpg"}}}
+	if w := doJSON(t, h, "PUT", "/api/config", cfg); w.Code != http.StatusOK {
+		t.Fatalf("put: %d %s", w.Code, w.Body.String())
+	}
+	exists := func(n string) bool { _, err := os.Stat(filepath.Join(dir, n)); return err == nil }
+	if !exists("bg-current.jpg") || !exists("bg-theme.jpg") {
+		t.Error("the current image and the one a theme uses must stay")
+	}
+	if exists("bg-orphan.jpg") {
+		t.Error("an image nothing refers to should be removed")
+	}
+
+	// Deleting the theme frees its image.
+	cfg.Themes = nil
+	if w := doJSON(t, h, "PUT", "/api/config", cfg); w.Code != http.StatusOK {
+		t.Fatalf("put: %d %s", w.Code, w.Body.String())
+	}
+	if exists("bg-theme.jpg") || !exists("bg-current.jpg") {
+		t.Error("after deleting the theme only the current image should remain")
+	}
+
+	// Removing the background keeps what a theme still needs.
+	cfg.Themes = []config.Theme{{ID: "t2", Name: "Keep", Appearance: config.Appearance{Theme: "dark", Density: "comfortable", Layout: "list", BackgroundImage: "bg-current.jpg"}}}
+	if w := doJSON(t, h, "PUT", "/api/config", cfg); w.Code != http.StatusOK {
+		t.Fatalf("put: %d %s", w.Code, w.Body.String())
+	}
+	if w := doJSON(t, h, "DELETE", "/api/background", nil); w.Code != http.StatusOK {
+		t.Fatalf("delete: %d", w.Code)
+	}
+	if !exists("bg-current.jpg") {
+		t.Error("the image a theme uses must survive removing the background")
 	}
 }

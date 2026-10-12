@@ -22,16 +22,26 @@ var hexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$`)
 // in case a config.json was imported or hand-edited.
 var safeFilename = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,120}$`)
 
+// Settings are the options of the whole dashboard. The visual ones live in
+// Appearance (embedded, so they stay flat in the JSON) because a theme saves
+// exactly those.
 type Settings struct {
-	Theme           string `json:"theme"`         // auto | light | dark
-	Density         string `json:"density"`       // compact | comfortable
-	CheckInterval   int    `json:"checkInterval"` // seconds
-	OpenInNewTab    bool   `json:"openInNewTab"`
+	CheckInterval int  `json:"checkInterval"` // seconds
+	OpenInNewTab  bool `json:"openInNewTab"`
+	Appearance
+}
+
+// Appearance is everything that decides how the dashboard looks: what a theme
+// stores and applies.
+type Appearance struct {
+	Theme           string `json:"theme"`                     // auto | light | dark
+	Density         string `json:"density"`                   // compact | comfortable
 	BackgroundColor string `json:"backgroundColor,omitempty"` // #rrggbb or #rrggbbaa; empty = theme default
 	TileColor       string `json:"tileColor,omitempty"`       // #rrggbb or #rrggbbaa; empty = theme default
 	AccentColor     string `json:"accentColor,omitempty"`     // #rrggbb or #rrggbbaa; empty = theme default
 	// BackgroundImage is a filename inside <data>/backgrounds, served at
-	// GET /backgrounds/{name}; empty = no image (plain BackgroundColor).
+	// GET /backgrounds/{name}; empty = no image (plain BackgroundColor). A file
+	// stays on disk while the settings or any saved theme uses it.
 	BackgroundImage string `json:"backgroundImage,omitempty"`
 	// BackgroundOpacity is 1-100; 0 (and thus omitted) normalizes to 100
 	// (fully opaque), matching every image uploaded before this setting
@@ -62,7 +72,38 @@ type Settings struct {
 	TileBorderWidth  *int `json:"tileBorderWidth,omitempty"`
 	GroupBorderWidth *int `json:"groupBorderWidth,omitempty"`
 	CardOpacity      int  `json:"cardOpacity,omitempty"`
+	// The look every widget has unless it sets its own (see WidgetStyle). Empty
+	// colors follow the tiles; WidgetOpacity 0 normalizes to 100.
+	WidgetColor       string `json:"widgetColor,omitempty"`
+	WidgetTextColor   string `json:"widgetTextColor,omitempty"`
+	WidgetBorderColor string `json:"widgetBorderColor,omitempty"`
+	WidgetBarColor    string `json:"widgetBarColor,omitempty"`
+	WidgetOpacity     int    `json:"widgetOpacity,omitempty"`
+	WidgetBorderWidth *int   `json:"widgetBorderWidth,omitempty"`
 }
+
+// WidgetStyle is how one widget looks when it differs from the global widget
+// look. Every field is optional: unset = follow Settings.
+type WidgetStyle struct {
+	Color       string `json:"color,omitempty"`
+	TextColor   string `json:"textColor,omitempty"`
+	BorderColor string `json:"borderColor,omitempty"`
+	BarColor    string `json:"barColor,omitempty"`
+	// Opacity (1-100) of the background; BorderWidth in px (0-8).
+	Opacity     *int `json:"opacity,omitempty"`
+	BorderWidth *int `json:"borderWidth,omitempty"`
+}
+
+// Theme is a saved look: the appearance settings plus the style of each widget
+// (by widget id).
+type Theme struct {
+	ID         string                 `json:"id"`
+	Name       string                 `json:"name"`
+	Appearance Appearance             `json:"appearance"`
+	Widgets    map[string]WidgetStyle `json:"widgets,omitempty"`
+}
+
+const maxThemes = 30
 
 type Item struct {
 	ID          string `json:"id"`
@@ -103,14 +144,8 @@ type Widget struct {
 	// Width in px (120-1200); Height in px (0 = fit the content, up to 1000).
 	Width  int `json:"width"`
 	Height int `json:"height"`
-	// Appearance. Colors are #rrggbb[aa]; empty = theme default.
-	Color       string `json:"color,omitempty"`
-	TextColor   string `json:"textColor,omitempty"`
-	BorderColor string `json:"borderColor,omitempty"`
-	BarColor    string `json:"barColor,omitempty"`
-	// Opacity (1-100) of the background; BorderWidth in px (0-8, nil = 1).
-	Opacity     int  `json:"opacity"`
-	BorderWidth *int `json:"borderWidth,omitempty"`
+	// Appearance overrides (flat in the JSON); unset = the global widget look.
+	WidgetStyle
 
 	// Read only to upgrade widgets saved by v1.10.x (see migrateWidget); they
 	// are emptied on load and never written again.
@@ -156,6 +191,11 @@ type Config struct {
 	Widgets  []Widget `json:"widgets"`
 	// Order is the sequence of groups and widgets on the dashboard, by id.
 	Order []string `json:"order"`
+	// Themes are the saved looks. ActiveTheme is the id of the one last
+	// applied (a built-in one starts with "builtin:"); it only drives the
+	// "modified" hint in the interface.
+	Themes      []Theme `json:"themes"`
+	ActiveTheme string  `json:"activeTheme,omitempty"`
 }
 
 // Redacted returns a copy that is safe to send to the browser: widget
@@ -175,44 +215,37 @@ func Default() Config {
 	return Config{
 		Title: "Homelab",
 		Settings: Settings{
-			Theme:             "auto",
-			Density:           "comfortable",
-			CheckInterval:     60,
-			OpenInNewTab:      true,
-			BackgroundOpacity: 100,
-			Layout:            "list",
-			BarOpacity:        100,
-			CardOpacity:       40,
+			CheckInterval: 60,
+			OpenInNewTab:  true,
+			Appearance: Appearance{
+				Theme:             "auto",
+				Density:           "comfortable",
+				BackgroundOpacity: 100,
+				Layout:            "list",
+				BarOpacity:        100,
+				CardOpacity:       40,
+				WidgetOpacity:     100,
+			},
 		},
 		Groups:  []Group{},
 		Widgets: []Widget{},
 		Order:   []string{},
+		Themes:  []Theme{},
 	}
 }
 
 // normalize fills in missing values (old files or partial imports).
 func (c *Config) normalize() {
-	d := Default()
-	if c.Settings.Theme == "" {
-		c.Settings.Theme = d.Settings.Theme
-	}
-	if c.Settings.Density == "" {
-		c.Settings.Density = d.Settings.Density
-	}
 	if c.Settings.CheckInterval == 0 {
-		c.Settings.CheckInterval = d.Settings.CheckInterval
+		c.Settings.CheckInterval = Default().Settings.CheckInterval
 	}
-	if c.Settings.BackgroundOpacity == 0 {
-		c.Settings.BackgroundOpacity = d.Settings.BackgroundOpacity
+	c.Settings.Appearance.normalize()
+	if c.Themes == nil {
+		c.Themes = []Theme{}
 	}
-	if c.Settings.CardOpacity == 0 {
-		c.Settings.CardOpacity = d.Settings.CardOpacity
-	}
-	if c.Settings.Layout == "" {
-		c.Settings.Layout = d.Settings.Layout
-	}
-	if c.Settings.BarOpacity == 0 {
-		c.Settings.BarOpacity = d.Settings.BarOpacity
+	c.Themes = append(make([]Theme, 0, len(c.Themes)), c.Themes...)
+	for i := range c.Themes {
+		c.Themes[i].Appearance.normalize()
 	}
 	if c.Groups == nil {
 		c.Groups = []Group{}
@@ -234,9 +267,6 @@ func (c *Config) normalize() {
 		}
 		if w.Width == 0 {
 			w.Width = 300
-		}
-		if w.Opacity == 0 {
-			w.Opacity = 100
 		}
 		w.HasPassword = false
 		migrateWidget(w)
@@ -332,61 +362,155 @@ func newID() string {
 	return hex.EncodeToString(b)
 }
 
+// normalize fills in the defaults of an appearance (old files, partial imports).
+func (a *Appearance) normalize() {
+	d := Default().Settings.Appearance
+	if a.Theme == "" {
+		a.Theme = d.Theme
+	}
+	if a.Density == "" {
+		a.Density = d.Density
+	}
+	if a.BackgroundOpacity == 0 {
+		a.BackgroundOpacity = d.BackgroundOpacity
+	}
+	if a.CardOpacity == 0 {
+		a.CardOpacity = d.CardOpacity
+	}
+	if a.Layout == "" {
+		a.Layout = d.Layout
+	}
+	if a.BarOpacity == 0 {
+		a.BarOpacity = d.BarOpacity
+	}
+	if a.WidgetOpacity == 0 {
+		a.WidgetOpacity = d.WidgetOpacity
+	}
+}
+
+// validate checks an appearance. what names it in the messages ("" for the
+// dashboard's own settings, a theme's name otherwise).
+func (a Appearance) validate(what string) error {
+	pre := ""
+	if what != "" {
+		pre = fmt.Sprintf("theme %q: ", what)
+	}
+	switch a.Theme {
+	case "auto", "light", "dark":
+	default:
+		return fmt.Errorf("%sinvalid theme: %q", pre, a.Theme)
+	}
+	switch a.Density {
+	case "compact", "comfortable":
+	default:
+		return fmt.Errorf("%sinvalid density: %q", pre, a.Density)
+	}
+	switch a.Layout {
+	case "", "list", "grid": // "" = unset, filled in by normalize
+	default:
+		return fmt.Errorf("%sinvalid layout: %q", pre, a.Layout)
+	}
+	for name, w := range map[string]*int{"tile": a.TileBorderWidth, "group": a.GroupBorderWidth, "widget": a.WidgetBorderWidth} {
+		if w != nil && (*w < 0 || *w > 8) {
+			return fmt.Errorf("%s%s border width must be between 0 and 8", pre, name)
+		}
+	}
+	for name, o := range map[string]int{"card": a.CardOpacity, "top bar": a.BarOpacity, "background": a.BackgroundOpacity, "widget": a.WidgetOpacity} {
+		if o < 0 || o > 100 {
+			return fmt.Errorf("%s%s opacity must be between 0 and 100", pre, name)
+		}
+	}
+	for name, v := range map[string]string{
+		"background":      a.BackgroundColor,
+		"tile":            a.TileColor,
+		"accent":          a.AccentColor,
+		"card":            a.CardColor,
+		"hover":           a.HoverColor,
+		"panel":           a.PanelColor,
+		"tile text":       a.TileTextColor,
+		"tile text hover": a.TileTextHoverColor,
+		"tile border":     a.TileBorderColor,
+		"group border":    a.GroupBorderColor,
+		"glow":            a.GlowColor,
+		"widget":          a.WidgetColor,
+		"widget text":     a.WidgetTextColor,
+		"widget border":   a.WidgetBorderColor,
+		"widget bar":      a.WidgetBarColor,
+	} {
+		if v != "" && !hexColor.MatchString(v) {
+			return fmt.Errorf("%sinvalid %s color: must be in #rrggbb or #rrggbbaa format", pre, name)
+		}
+	}
+	if img := a.BackgroundImage; img != "" && !safeFilename.MatchString(img) {
+		return fmt.Errorf("%sinvalid background image filename", pre)
+	}
+	return nil
+}
+
+// validate checks one widget style.
+func (st WidgetStyle) validate(who string) error {
+	for name, v := range map[string]string{"background": st.Color, "text": st.TextColor, "border": st.BorderColor, "bar": st.BarColor} {
+		if v != "" && !hexColor.MatchString(v) {
+			return fmt.Errorf("%s: invalid %s color, must be in #rrggbb or #rrggbbaa format", who, name)
+		}
+	}
+	if st.Opacity != nil && (*st.Opacity < 1 || *st.Opacity > 100) {
+		return fmt.Errorf("%s: the opacity must be between 1 and 100", who)
+	}
+	if st.BorderWidth != nil && (*st.BorderWidth < 0 || *st.BorderWidth > 8) {
+		return fmt.Errorf("%s: the border width must be between 0 and 8", who)
+	}
+	return nil
+}
+
+var themeID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,60}$`)
+
+func (c Config) validateThemes() error {
+	if len(c.Themes) > maxThemes {
+		return fmt.Errorf("too many themes (%d max)", maxThemes)
+	}
+	if len(c.ActiveTheme) > 80 {
+		return errors.New("invalid active theme")
+	}
+	ids := map[string]bool{}
+	for _, t := range c.Themes {
+		if !themeID.MatchString(t.ID) || ids[t.ID] {
+			return fmt.Errorf("theme %q has a missing or duplicate id", t.Name)
+		}
+		ids[t.ID] = true
+		if t.Name == "" || len(t.Name) > 60 {
+			return errors.New("every theme needs a name (60 characters max)")
+		}
+		if err := t.Appearance.validate(t.Name); err != nil {
+			return err
+		}
+		if len(t.Widgets) > 2*maxWidgets {
+			return fmt.Errorf("theme %q has too many widget styles", t.Name)
+		}
+		for id, st := range t.Widgets {
+			if len(id) > 60 {
+				return fmt.Errorf("theme %q has an invalid widget id", t.Name)
+			}
+			if err := st.validate(fmt.Sprintf("theme %q", t.Name)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func (c Config) Validate() error {
 	if len(c.Title) > 100 {
 		return errors.New("title too long (100 characters max)")
 	}
-	switch c.Settings.Theme {
-	case "auto", "light", "dark":
-	default:
-		return fmt.Errorf("invalid theme: %q", c.Settings.Theme)
-	}
-	switch c.Settings.Density {
-	case "compact", "comfortable":
-	default:
-		return fmt.Errorf("invalid density: %q", c.Settings.Density)
-	}
-	switch c.Settings.Layout {
-	case "", "list", "grid": // "" = unset, filled in by normalize
-	default:
-		return fmt.Errorf("invalid layout: %q", c.Settings.Layout)
-	}
-	for name, w := range map[string]*int{"tile": c.Settings.TileBorderWidth, "group": c.Settings.GroupBorderWidth} {
-		if w != nil && (*w < 0 || *w > 8) {
-			return fmt.Errorf("%s border width must be between 0 and 8", name)
-		}
-	}
-	if o := c.Settings.CardOpacity; o < 0 || o > 100 {
-		return errors.New("card opacity must be between 0 and 100")
-	}
-	if o := c.Settings.BarOpacity; o < 0 || o > 100 {
-		return errors.New("top bar opacity must be between 0 and 100")
-	}
 	if c.Settings.CheckInterval < 10 || c.Settings.CheckInterval > 3600 {
 		return errors.New("the check interval must be between 10 and 3600 seconds")
 	}
-	for name, v := range map[string]string{
-		"background":      c.Settings.BackgroundColor,
-		"tile":            c.Settings.TileColor,
-		"accent":          c.Settings.AccentColor,
-		"card":            c.Settings.CardColor,
-		"hover":           c.Settings.HoverColor,
-		"panel":           c.Settings.PanelColor,
-		"tile text":       c.Settings.TileTextColor,
-		"tile text hover": c.Settings.TileTextHoverColor,
-		"tile border":     c.Settings.TileBorderColor,
-		"group border":    c.Settings.GroupBorderColor,
-		"glow":            c.Settings.GlowColor,
-	} {
-		if v != "" && !hexColor.MatchString(v) {
-			return fmt.Errorf("invalid %s color: must be in #rrggbb or #rrggbbaa format", name)
-		}
+	if err := c.Settings.Appearance.validate(""); err != nil {
+		return err
 	}
-	if img := c.Settings.BackgroundImage; img != "" && !safeFilename.MatchString(img) {
-		return errors.New("invalid background image filename")
-	}
-	if o := c.Settings.BackgroundOpacity; o < 0 || o > 100 {
-		return errors.New("background opacity must be between 0 and 100")
+	if err := c.validateThemes(); err != nil {
+		return err
 	}
 
 	seen := map[string]bool{}
@@ -456,16 +580,8 @@ func (c Config) validateWidgets(seen map[string]bool) error {
 		if w.Height < 0 || w.Height > 1000 {
 			return fmt.Errorf("widget %q: the height must be between 0 and 1000 px", w.Name)
 		}
-		if w.Opacity < 1 || w.Opacity > 100 {
-			return fmt.Errorf("widget %q: the opacity must be between 1 and 100", w.Name)
-		}
-		if w.BorderWidth != nil && (*w.BorderWidth < 0 || *w.BorderWidth > 8) {
-			return fmt.Errorf("widget %q: the border width must be between 0 and 8", w.Name)
-		}
-		for name, v := range map[string]string{"background": w.Color, "text": w.TextColor, "border": w.BorderColor, "bar": w.BarColor} {
-			if v != "" && !hexColor.MatchString(v) {
-				return fmt.Errorf("widget %q: invalid %s color, must be in #rrggbb or #rrggbbaa format", w.Name, name)
-			}
+		if err := w.WidgetStyle.validate(fmt.Sprintf("widget %q", w.Name)); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -518,6 +634,26 @@ type legacyBlock struct {
 //     data dropped) inside a synthetic "Other" group, rather than being
 //     silently discarded.
 func UnmarshalConfig(raw []byte) (Config, error) {
+	c, err := unmarshalConfig(raw)
+	if err != nil {
+		return Config{}, err
+	}
+	// Before themes existed every widget was saved with an opacity of 100, which
+	// was only the default: let those follow the global widget look instead.
+	var keys map[string]json.RawMessage
+	if json.Unmarshal(raw, &keys) == nil {
+		if _, ok := keys["themes"]; !ok {
+			for i := range c.Widgets {
+				if o := c.Widgets[i].Opacity; o != nil && (*o == 100 || *o == 0) {
+					c.Widgets[i].Opacity = nil
+				}
+			}
+		}
+	}
+	return c, nil
+}
+
+func unmarshalConfig(raw []byte) (Config, error) {
 	var c Config
 	if err := json.Unmarshal(raw, &c); err != nil {
 		return Config{}, err

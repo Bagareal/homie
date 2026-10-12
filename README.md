@@ -77,6 +77,18 @@ The Appearance section in Settings lets you customize:
 - a background image (JPEG or PNG) with its own opacity
 - the opacity of the top bar and, in the grid layout, of the group cards
 
+### Themes
+
+Everything on the Appearance page (colors, theme mode, layout, density, the background image, opacities) plus the look of each widget can be saved as a **theme**: *Settings → Appearance → Themes → Save current as…*. Apply, rename, update or delete your themes from the same list, and switch between them with one click. The active theme shows "modified" when you have changed something since applying it; *Update* saves the changes into it.
+
+Three themes ship with Homie (near-black graphite with white and light-grey text, differing only in the accent): **Mono**, **Neon green** and **Purple**. They only set the colors, so your layout, density and background image stay as they are, and widgets go back to following the theme. They cannot be overwritten, but you can apply one and save it under your own name.
+
+*Export* writes a theme to a small `.json` file and *Import theme…* reads one (the background image is not part of the file). Background images are kept on the server for as long as the current look or any saved theme uses them.
+
+### Widget look
+
+Under *Appearance → Widgets* you set the look every widget shares (background with opacity, text, border, bars); by default a widget looks like a tile. A widget can override any of it in its own editor, and "Use this look for all widgets" copies one widget's look into the shared one.
+
 ## Installing as an app (PWA)
 
 Homie can be installed like an app, with its own icon and a full-screen window. Browsers only allow this over **HTTPS**, so open it through a reverse proxy with a certificate (for example Nginx Proxy Manager) rather than `http://<ip>:8080`, then use "Install" in the browser menu (Chrome, Edge) or "Add to Home Screen" (Safari). On iPhone and iPad "Add to Home Screen" also works over plain HTTP.

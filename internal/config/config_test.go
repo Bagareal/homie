@@ -234,7 +234,7 @@ func widgetConfig() Config {
 
 func TestWidgetDefaultsAreFilledIn(t *testing.T) {
 	w := widgetConfig().Widgets[0]
-	if w.Kind != "glances" || w.Refresh != 5 || w.Width != 300 || w.Opacity != 100 {
+	if w.Kind != "glances" || w.Refresh != 5 || w.Width != 300 || w.Opacity != nil {
 		t.Fatalf("defaults not applied: %+v", w)
 	}
 	if err := widgetConfig().Validate(); err != nil {
@@ -445,5 +445,111 @@ func TestTrueNASWidgets(t *testing.T) {
 	c.Widgets[0].Rows = []Row{{ID: "a", Type: "pool"}}
 	if err := c.Validate(); err == nil {
 		t.Error("a TrueNAS-only row on a Glances widget should be refused")
+	}
+}
+
+func TestSettingsStayFlatInTheJSON(t *testing.T) {
+	// Appearance is embedded, so a saved config keeps its old shape and old
+	// files keep loading.
+	raw, err := json.Marshal(Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		Settings map[string]any `json:"settings"`
+	}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"theme", "density", "layout", "checkInterval", "cardOpacity"} {
+		if _, ok := m.Settings[key]; !ok {
+			t.Errorf("settings.%s is missing: %v", key, m.Settings)
+		}
+	}
+	if _, nested := m.Settings["Appearance"]; nested {
+		t.Error("appearance must not be nested")
+	}
+}
+
+func themedConfig() Config {
+	c := widgetConfig()
+	three := 3
+	c.Themes = []Theme{{
+		ID: "t1", Name: "Night",
+		Appearance: Appearance{Theme: "dark", Density: "compact", Layout: "grid", AccentColor: "#39ff14", BackgroundImage: "bg-1.jpg", WidgetColor: "#20202080"},
+		Widgets:    map[string]WidgetStyle{"w1": {Color: "#101010", BorderWidth: &three}},
+	}}
+	c.ActiveTheme = "t1"
+	c.normalize()
+	return c
+}
+
+func TestThemesValidate(t *testing.T) {
+	if err := themedConfig().Validate(); err != nil {
+		t.Fatalf("a good theme should validate: %v", err)
+	}
+	for name, mutate := range map[string]func(c *Config){
+		"no name":        func(c *Config) { c.Themes[0].Name = "" },
+		"bad id":         func(c *Config) { c.Themes[0].ID = "../x" },
+		"duplicate id":   func(c *Config) { c.Themes = append(c.Themes, c.Themes[0]) },
+		"bad color":      func(c *Config) { c.Themes[0].Appearance.AccentColor = "green" },
+		"bad widget col": func(c *Config) { c.Themes[0].Appearance.WidgetColor = "nope" },
+		"bad image":      func(c *Config) { c.Themes[0].Appearance.BackgroundImage = "../../etc/passwd" },
+		"bad mode":       func(c *Config) { c.Themes[0].Appearance.Theme = "sepia" },
+		"bad style":      func(c *Config) { c.Themes[0].Widgets["w1"] = WidgetStyle{TextColor: "x"} },
+		"too many": func(c *Config) {
+			for i := 0; i < maxThemes; i++ {
+				c.Themes = append(c.Themes, Theme{ID: "x" + strings.Repeat("a", i+1), Name: "n", Appearance: c.Themes[0].Appearance})
+			}
+		},
+	} {
+		c := themedConfig()
+		mutate(&c)
+		if err := c.Validate(); err == nil {
+			t.Errorf("%s: expected an error", name)
+		}
+	}
+}
+
+func TestThemeAppearanceGetsDefaults(t *testing.T) {
+	c := Default()
+	c.Themes = []Theme{{ID: "t", Name: "Bare", Appearance: Appearance{AccentColor: "#ff0000"}}}
+	c.normalize()
+	a := c.Themes[0].Appearance
+	if a.Theme != "auto" || a.Layout != "list" || a.CardOpacity != 40 || a.WidgetOpacity != 100 {
+		t.Errorf("defaults not filled in: %+v", a)
+	}
+	if err := c.Validate(); err != nil {
+		t.Errorf("a bare theme should validate after normalizing: %v", err)
+	}
+}
+
+func TestWidgetOpacityIsOptionalAndUpgraded(t *testing.T) {
+	old := `{"title":"T","settings":{"theme":"auto","density":"comfortable","checkInterval":60},
+	"groups":[],"widgets":[
+	 {"id":"a","name":"A","kind":"glances","url":"http://h:61208","rows":[],"refresh":5,"width":300,"height":0,"opacity":100},
+	 {"id":"b","name":"B","kind":"glances","url":"http://h:61208","rows":[],"refresh":5,"width":300,"height":0,"opacity":60}]}`
+	c, err := UnmarshalConfig([]byte(old))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Widgets[0].Opacity != nil {
+		t.Errorf("an opacity of 100 saved before themes was only the default, got %v", *c.Widgets[0].Opacity)
+	}
+	if c.Widgets[1].Opacity == nil || *c.Widgets[1].Opacity != 60 {
+		t.Errorf("an explicit opacity must be kept: %v", c.Widgets[1].Opacity)
+	}
+
+	// Once the file has a "themes" key, an explicit 100 is a real choice.
+	c.normalize()
+	hundred := 100
+	c.Widgets[1].Opacity = &hundred
+	raw, _ := json.Marshal(c)
+	again, err := UnmarshalConfig(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Widgets[1].Opacity == nil || *again.Widgets[1].Opacity != 100 {
+		t.Errorf("an explicit 100 was lost: %v", again.Widgets[1].Opacity)
 	}
 }

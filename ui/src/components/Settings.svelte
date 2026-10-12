@@ -3,6 +3,7 @@
   import * as api from '../lib/api'
   import { barHeight } from '../lib/barHeight'
   import { app } from '../lib/state.svelte'
+  import { isBuiltin, isModified } from '../lib/themes'
   import type { Config, Settings } from '../lib/types'
   import ColorField from './ColorField.svelte'
   import Slider from './Slider.svelte'
@@ -50,6 +51,52 @@
       app.notify('Background image updated')
     } catch (err) {
       app.notify(`Upload failed: ${(err as Error).message}`, true)
+    }
+  }
+
+  // ---- themes
+
+  let themeInput: HTMLInputElement | undefined = $state()
+  const activeTheme = $derived(app.config!.activeTheme)
+  const modified = $derived(isModified(app.config!, activeTheme))
+  const swatches = $derived([
+    ...app.builtinThemes.map((t) => ({ id: t.id, name: t.name, bg: t.colors.backgroundColor, tile: t.colors.tileColor, accent: t.colors.accentColor })),
+    ...app.config!.themes.map((t) => ({ id: t.id, name: t.name, bg: t.appearance.backgroundColor, tile: t.appearance.tileColor, accent: t.appearance.accentColor })),
+  ])
+
+  async function saveAs() {
+    const name = await app.prompt({
+      title: 'Save theme',
+      message: 'Save the current look (colors, layout, background image, and each widget’s look) under a name.',
+      placeholder: 'My theme',
+      confirmLabel: 'Save',
+    })
+    if (name) app.saveCurrentTheme(name)
+  }
+
+  async function rename(id: string, current: string) {
+    const name = await app.prompt({ title: 'Rename theme', message: 'New name for the theme.', value: current, confirmLabel: 'Rename' })
+    if (name) app.renameTheme(id, name)
+  }
+
+  async function removeTheme(id: string, name: string) {
+    const ok = await app.confirm({
+      title: 'Delete theme',
+      message: `Delete the theme “${name}”? The dashboard keeps its current look.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    })
+    if (ok) app.deleteTheme(id)
+  }
+
+  async function importTheme(e: Event) {
+    const file = (e.currentTarget as HTMLInputElement).files?.[0]
+    if (themeInput) themeInput.value = ''
+    if (!file) return
+    try {
+      app.importTheme(await file.text())
+    } catch (err) {
+      app.notify(`Import failed: ${(err as Error).message}`, true)
     }
   }
 
@@ -145,6 +192,38 @@
   <div class="panels">
   {#if tab === 'appearance'}
     <section>
+      <h2>Themes</h2>
+      <ul class="themes">
+        {#each swatches as t (t.id)}
+          {@const active = t.id === activeTheme}
+          <li class:active>
+            <span class="swatch" style:background={t.bg ?? 'var(--bg)'} aria-hidden="true">
+              <i style:background={t.tile ?? 'var(--tile)'}></i><i style:background={t.accent ?? 'var(--accent)'}></i>
+            </span>
+            <span class="tname">
+              {t.name}
+              {#if isBuiltin(t.id)}<small>built-in</small>{/if}
+              {#if active}<small class="on">{modified ? 'active, modified' : 'active'}</small>{/if}
+            </span>
+            <span class="tbtns">
+              {#if !active || modified}<button type="button" class:primary={!active} onclick={() => app.applyTheme(t.id)}>Apply</button>{/if}
+              {#if active && modified && !isBuiltin(t.id)}<button type="button" onclick={() => app.updateTheme(t.id)}>Update</button>{/if}
+              {#if !isBuiltin(t.id)}<button type="button" onclick={() => rename(t.id, t.name)}>Rename</button>{/if}
+              <button type="button" onclick={() => app.exportTheme(t.id)}>Export</button>
+              {#if !isBuiltin(t.id)}<button type="button" class="danger" onclick={() => removeTheme(t.id, t.name)}>Delete</button>{/if}
+            </span>
+          </li>
+        {/each}
+      </ul>
+      <div class="row">
+        <button type="button" onclick={saveAs}>Save current as…</button>
+        <button type="button" onclick={() => themeInput?.click()}>Import theme…</button>
+        <input bind:this={themeInput} type="file" accept="application/json,.json" hidden onchange={importTheme} />
+      </div>
+      <p class="hint">A theme saves everything on this page: colors, layout, density, the background image, and the look of each widget. “Update” overwrites the active theme with your changes; “Save current as…” makes a new one. A theme file does not include the background image.</p>
+    </section>
+
+    <section>
       <h2>Theme and layout</h2>
       <fieldset>
         <legend>Theme</legend>
@@ -213,6 +292,17 @@
     </section>
 
     <section>
+      <h2>Widgets</h2>
+      <ColorField label="Background" cssVar="--widget-color" theme={s.theme} value={s.widgetColor} onpreview={(v) => preview('widgetColor', v)} oncommit={commit} />
+      <Slider label="Background opacity" value={s.widgetOpacity} oninput={(v) => preview('widgetOpacity', v)} oncommit={commit} />
+      <ColorField label="Text" cssVar="--widget-text" theme={s.theme} value={s.widgetTextColor} onpreview={(v) => preview('widgetTextColor', v)} oncommit={commit} />
+      <ColorField label="Border" cssVar="--widget-border" theme={s.theme} value={s.widgetBorderColor} onpreview={(v) => preview('widgetBorderColor', v)} oncommit={commit} />
+      <Slider label="Border width" unit="px" min={0} max={8} value={s.widgetBorderWidth ?? s.tileBorderWidth ?? 1} oninput={(v) => preview('widgetBorderWidth', v)} oncommit={commit} />
+      <ColorField label="Bars" cssVar="--widget-bar" theme={s.theme} value={s.widgetBarColor} onpreview={(v) => preview('widgetBarColor', v)} oncommit={commit} />
+      <p class="hint">The look every widget has, unless a widget sets its own in its editor. Without a custom color a widget looks like a tile. In a widget's editor, “Use this look for all widgets” copies that widget's look here.</p>
+    </section>
+
+    <section>
       <h2>Background image</h2>
       <div class="row">
         <button type="button" onclick={() => bgInput?.click()}>{s.backgroundImage ? 'Replace background image' : 'Upload background image'}</button>
@@ -273,6 +363,62 @@
 </div>
 
 <style>
+  .themes {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .themes li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 8px 10px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+  }
+  .themes li.active {
+    border-color: var(--accent);
+  }
+  .swatch {
+    display: flex;
+    gap: 3px;
+    align-items: center;
+    flex: none;
+    padding: 5px;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+  }
+  .swatch i {
+    width: 14px;
+    height: 22px;
+    border-radius: 3px;
+  }
+  .tname {
+    flex: 1;
+    min-width: 8ch;
+    font-weight: 600;
+  }
+  .tname small {
+    margin-left: 6px;
+    color: var(--muted);
+    font-weight: 400;
+  }
+  .tname small.on {
+    color: var(--accent);
+  }
+  .tbtns {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .tbtns button {
+    padding: 3px 10px;
+    font-size: 0.9rem;
+  }
   .tabs {
     display: flex;
     gap: 4px;

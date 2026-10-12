@@ -3,6 +3,7 @@
   import * as api from '../lib/api'
   import { bytes } from '../lib/format'
   import { app, uid } from '../lib/state.svelte'
+  import { STYLE_KEYS } from '../lib/themes'
   import type { HostData, Row, RowType, Widget, WidgetData, WidgetKind } from '../lib/types'
   import ColorField from './ColorField.svelte'
   import Slider from './Slider.svelte'
@@ -53,7 +54,6 @@
     refresh: 5,
     width: 300,
     height: 0,
-    opacity: 100,
   }
   // Edited locally until saved; the password is never prefilled.
   const initial: Widget = { ...blank, ...structuredClone($state.snapshot(saved) ?? {}), password: '', clearPassword: false }
@@ -103,7 +103,10 @@
   }
 
   const nas = $derived(w.kind === 'truenas')
-  const dirty = $derived(JSON.stringify(w) !== initialJson)
+  // Ticked: on save, this widget's look becomes the look of every widget.
+  let shareLook = $state(false)
+  const global = $derived(app.config!.settings)
+  const dirty = $derived(JSON.stringify(w) !== initialJson || shareLook)
 
   // A new widget chooses its source first; changing it starts over.
   function setKind(kind: WidgetKind) {
@@ -255,7 +258,13 @@
       clearPassword: !!w.clearPassword || (addressChanged && !w.password),
       rows: w.rows.map((r) => ({ ...$state.snapshot(r), name: (r.name ?? '').trim() })),
     }
-    app.upsertWidget(out)
+    if (shareLook) {
+      // Its own settings move to Settings → Widgets; the widget then simply follows them.
+      const style = Object.fromEntries(STYLE_KEYS.map((k) => [k, out[k]]).filter(([, v]) => v !== undefined && v !== ''))
+      for (const k of STYLE_KEYS) delete out[k]
+      app.upsertWidget(out)
+      app.shareWidgetStyle(style)
+    } else app.upsertWidget(out)
     dialog.close()
   }
 
@@ -522,8 +531,8 @@
           class="d-widget"
           style:width="{w.width * scale}px"
           style:height="{widgetH * scale}px"
-          style:background="color-mix(in srgb, {w.color ?? 'var(--tile)'} {w.opacity}%, transparent)"
-          style:border="{Math.max(1, (w.borderWidth ?? 1) * scale)}px solid {w.borderColor ?? 'var(--line)'}"
+          style:background="color-mix(in srgb, {w.color ?? 'var(--widget-color)'} {w.opacity ?? global.widgetOpacity ?? 100}%, transparent)"
+          style:border="{Math.max(1, (w.borderWidth ?? global.widgetBorderWidth ?? global.tileBorderWidth ?? 1) * scale)}px solid {w.borderColor ?? 'var(--widget-border)'}"
         >widget</div>
         <div class="d-card" style:width="{page.card.w * scale}px" style:height="{page.card.h * scale}px">group card</div>
       </div>
@@ -534,12 +543,24 @@
     </fieldset>
     {:else}
     <fieldset>
-      <ColorField label="Background" cssVar="--tile" {theme} value={w.color} onpreview={(v) => (w.color = v)} oncommit={noop} />
-      <Slider label="Background opacity" min={1} value={w.opacity} oninput={(v) => (w.opacity = v)} oncommit={noop} />
-      <ColorField label="Text" cssVar="--text" {theme} value={w.textColor} onpreview={(v) => (w.textColor = v)} oncommit={noop} />
-      <ColorField label="Border" cssVar="--line" {theme} value={w.borderColor} onpreview={(v) => (w.borderColor = v)} oncommit={noop} />
-      <Slider label="Border width" unit="px" min={0} max={8} value={w.borderWidth ?? 1} oninput={(v) => (w.borderWidth = v)} oncommit={noop} />
-      <ColorField label="Bars" cssVar="--accent" {theme} value={w.barColor} onpreview={(v) => (w.barColor = v)} oncommit={noop} />
+      <small>“Default” means the look every widget shares (Settings → Appearance → Widgets). Set a value here only to make this widget different.</small>
+      <ColorField label="Background" cssVar="--widget-color" {theme} value={w.color} onpreview={(v) => (w.color = v)} oncommit={noop} />
+      <div class="with-reset">
+        <Slider label="Background opacity" min={1} value={w.opacity ?? global.widgetOpacity ?? 100} oninput={(v) => (w.opacity = v)} oncommit={noop} />
+        {#if w.opacity !== undefined}<button type="button" onclick={() => (w.opacity = undefined)}>Reset</button>{:else}<span class="tag">default</span>{/if}
+      </div>
+      <ColorField label="Text" cssVar="--widget-text" {theme} value={w.textColor} onpreview={(v) => (w.textColor = v)} oncommit={noop} />
+      <ColorField label="Border" cssVar="--widget-border" {theme} value={w.borderColor} onpreview={(v) => (w.borderColor = v)} oncommit={noop} />
+      <div class="with-reset">
+        <Slider label="Border width" unit="px" min={0} max={8} value={w.borderWidth ?? global.widgetBorderWidth ?? global.tileBorderWidth ?? 1} oninput={(v) => (w.borderWidth = v)} oncommit={noop} />
+        {#if w.borderWidth !== undefined}<button type="button" onclick={() => (w.borderWidth = undefined)}>Reset</button>{:else}<span class="tag">default</span>{/if}
+      </div>
+      <ColorField label="Bars" cssVar="--widget-bar" {theme} value={w.barColor} onpreview={(v) => (w.barColor = v)} oncommit={noop} />
+      <label class="check">
+        <input type="checkbox" bind:checked={shareLook} />
+        Use this look for all widgets
+      </label>
+      <small>When you save, the values set on this widget become the shared look in Settings, and the other widgets lose their own.</small>
     </fieldset>
     {/if}
         </div>
@@ -747,6 +768,16 @@
   .icon-btn:disabled {
     opacity: 0.35;
     cursor: default;
+  }
+  .with-reset {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .tag {
+    color: var(--muted);
+    font-size: 0.85rem;
   }
   .add {
     justify-self: start;

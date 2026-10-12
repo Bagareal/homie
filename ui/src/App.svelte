@@ -31,6 +31,14 @@
     root.style.setProperty('--tile-border-w', `${cfg.settings.tileBorderWidth ?? 1}px`)
     root.style.setProperty('--group-border-w', `${cfg.settings.groupBorderWidth ?? 1}px`)
     root.style.setProperty('--card-opacity', String(cfg.settings.cardOpacity ?? 40))
+    // The look of the widgets: their own setting, else the tiles'.
+    const wb = cfg.settings.widgetBorderWidth
+    root.style.setProperty('--widget-opacity', String(cfg.settings.widgetOpacity ?? 100))
+    root.style.setProperty('--widget-border-w', wb !== undefined ? `${wb}px` : 'var(--tile-border-w, 1px)')
+    root.style.setProperty('--widget-color', cfg.settings.widgetColor ?? 'var(--tile)')
+    root.style.setProperty('--widget-text', cfg.settings.widgetTextColor ?? 'var(--tile-text, var(--text))')
+    root.style.setProperty('--widget-border', cfg.settings.widgetBorderColor ?? 'var(--tile-border, var(--line))')
+    root.style.setProperty('--widget-bar', cfg.settings.widgetBarColor ?? 'var(--accent)')
     document.title = cfg.title || 'Homie'
 
     const vars: [string, string | undefined][] = [

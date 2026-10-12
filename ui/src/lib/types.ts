@@ -17,11 +17,10 @@ export interface Group {
   items: Item[]
 }
 
-export interface Settings {
+// Everything that decides how the dashboard looks: what a saved theme holds.
+export interface Appearance {
   theme: Theme
   density: Density
-  checkInterval: number
-  openInNewTab: boolean
   backgroundColor?: string
   tileColor?: string
   accentColor?: string
@@ -40,6 +39,36 @@ export interface Settings {
   tileBorderWidth?: number
   groupBorderWidth?: number
   cardOpacity: number
+  // The look every widget has unless it sets its own.
+  widgetColor?: string
+  widgetTextColor?: string
+  widgetBorderColor?: string
+  widgetBarColor?: string
+  widgetOpacity: number
+  widgetBorderWidth?: number
+}
+
+export interface Settings extends Appearance {
+  checkInterval: number
+  openInNewTab: boolean
+}
+
+// How one widget looks when it differs from the global widget look.
+export interface WidgetStyle {
+  color?: string
+  textColor?: string
+  borderColor?: string
+  barColor?: string
+  opacity?: number
+  borderWidth?: number
+}
+
+// A saved look: the appearance settings plus the style of each widget (by id).
+export interface SavedTheme {
+  id: string
+  name: string
+  appearance: Appearance
+  widgets?: Record<string, WidgetStyle>
 }
 
 export type WidgetKind = 'glances' | 'truenas'
@@ -58,7 +87,7 @@ export interface Row {
   temp?: boolean
 }
 
-export interface Widget {
+export interface Widget extends WidgetStyle {
   id: string
   name: string
   kind: WidgetKind
@@ -72,12 +101,6 @@ export interface Widget {
   refresh: number
   width: number
   height: number
-  color?: string
-  textColor?: string
-  borderColor?: string
-  barColor?: string
-  opacity: number
-  borderWidth?: number
 }
 
 export interface Config {
@@ -87,6 +110,9 @@ export interface Config {
   widgets: Widget[]
   // Ids of the groups and widgets, in the order they appear.
   order: string[]
+  themes: SavedTheme[]
+  // The id of the theme applied last ("builtin:…" for the ones that ship).
+  activeTheme?: string
 }
 
 export interface Usage {

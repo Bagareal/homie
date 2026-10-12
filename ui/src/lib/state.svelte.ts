@@ -1,5 +1,6 @@
 import * as api from './api'
-import type { Config, Group, Item, Status, Widget, WidgetData } from './types'
+import type { Config, Group, Item, SavedTheme, Status, Widget, WidgetData, WidgetStyle } from './types'
+import { applyBuiltin, applyTheme, BUILTIN_THEMES, fromFile, isModified, snapshotAppearance, snapshotWidgets, STYLE_KEYS, toFile, type BuiltinTheme } from './themes'
 
 export type DragData = { kind: 'item'; id: string; groupId: string } | { kind: 'group'; id: string } | { kind: 'widget'; id: string }
 
@@ -9,7 +10,14 @@ export function uid(): string {
 }
 
 export type Choice<T extends string = string> = { label: string; value: T; kind?: 'primary' | 'danger'; focus?: boolean }
-export type Ask = { title: string; message: string; buttons: Choice[]; resolve: (v: string | null) => void }
+export type Ask = {
+  title: string
+  message: string
+  buttons: Choice[]
+  // A text field above the buttons (see prompt()).
+  input?: { value: string; placeholder?: string }
+  resolve: (v: string | null) => void
+}
 
 class AppState {
   config = $state<Config | null>(null)
@@ -21,6 +29,7 @@ class AppState {
   drag = $state<DragData | null>(null)
   toast = $state<{ text: string; error: boolean; key: number } | null>(null)
   #toastTimer: ReturnType<typeof setTimeout> | undefined
+  #typed = ''
 
   async load() {
     this.config = withWidgets(await api.getConfig())
@@ -73,17 +82,32 @@ class AppState {
 
   // In-app replacement for the browser's confirm(): resolves with the value of
   // the clicked button, or null when dismissed (Esc).
-  choose<T extends string>(o: { title: string; message: string; buttons: Choice<T>[] }): Promise<T | null> {
+  choose<T extends string>(o: { title: string; message: string; buttons: Choice<T>[]; input?: Ask['input'] }): Promise<T | null> {
     this.ask?.resolve(null)
     return new Promise((resolve) => {
       this.ask = { ...o, resolve: resolve as (v: string | null) => void }
     })
   }
 
-  answer(value: string | null) {
+  answer(value: string | null, typed = '') {
+    this.#typed = typed
     const a = this.ask
     this.ask = null
     a?.resolve(value)
+  }
+
+  // Asks for a line of text; null when dismissed or left empty.
+  async prompt(o: { title: string; message: string; value?: string; placeholder?: string; confirmLabel: string }): Promise<string | null> {
+    const r = await this.choose({
+      title: o.title,
+      message: o.message,
+      input: { value: o.value ?? '', placeholder: o.placeholder },
+      buttons: [
+        { label: 'Cancel', value: 'cancel' },
+        { label: o.confirmLabel, value: 'ok', kind: 'primary' },
+      ],
+    })
+    return r === 'ok' ? this.#typed.trim() || null : null
   }
 
   async confirm(o: { title: string; message: string; confirmLabel: string; danger?: boolean }): Promise<boolean> {
@@ -197,6 +221,108 @@ class AppState {
     if (!this.config) return
     this.config.widgets = this.config.widgets.filter((w) => w.id !== id)
     this.save('Widget deleted')
+  }
+
+  // ---- themes
+
+  get builtinThemes(): BuiltinTheme[] {
+    return BUILTIN_THEMES
+  }
+
+  themeModified(): boolean {
+    return this.config ? isModified(this.config, this.config.activeTheme) : false
+  }
+
+  // Replaces the look with a theme. If the current look is not saved in the
+  // theme that was applied last, it is lost, so that is confirmed first.
+  async applyTheme(id: string) {
+    const cfg = this.config
+    if (!cfg) return
+    const builtin = BUILTIN_THEMES.find((t) => t.id === id)
+    const saved = cfg.themes.find((t) => t.id === id)
+    if (!builtin && !saved) return
+    if (isModified(cfg, cfg.activeTheme)) {
+      const ok = await this.confirm({
+        title: 'Replace the current look?',
+        message: 'The current look is not saved in a theme and will be lost. Save it first with “Save current as…” to keep it.',
+        confirmLabel: 'Replace',
+        danger: true,
+      })
+      if (!ok) return
+    }
+    if (builtin) applyBuiltin(cfg, builtin)
+    else applyTheme(cfg, saved!)
+    this.save(`Theme “${builtin?.name ?? saved!.name}” applied`)
+  }
+
+  // Saves the current look (appearance and widget styles) under a new name.
+  saveCurrentTheme(name: string) {
+    const cfg = this.config
+    if (!cfg) return
+    const t: SavedTheme = { id: uid(), name, appearance: snapshotAppearance(cfg.settings), widgets: snapshotWidgets(cfg.widgets) }
+    cfg.themes.push(t)
+    cfg.activeTheme = t.id
+    this.save(`Theme “${name}” saved`)
+  }
+
+  // Overwrites a saved theme with the current look.
+  updateTheme(id: string) {
+    const cfg = this.config
+    const t = cfg?.themes.find((x) => x.id === id)
+    if (!cfg || !t) return
+    t.appearance = snapshotAppearance(cfg.settings)
+    t.widgets = snapshotWidgets(cfg.widgets)
+    cfg.activeTheme = id
+    this.save(`Theme “${t.name}” updated`)
+  }
+
+  renameTheme(id: string, name: string) {
+    const t = this.config?.themes.find((x) => x.id === id)
+    if (!t) return
+    t.name = name
+    this.save('Theme renamed')
+  }
+
+  deleteTheme(id: string) {
+    const cfg = this.config
+    if (!cfg) return
+    cfg.themes = cfg.themes.filter((t) => t.id !== id)
+    if (cfg.activeTheme === id) cfg.activeTheme = undefined
+    this.save('Theme deleted')
+  }
+
+  exportTheme(id: string) {
+    const t = BUILTIN_THEMES.find((x) => x.id === id) ?? this.config?.themes.find((x) => x.id === id)
+    if (!t) return
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(toFile(t), null, 2)], { type: 'application/json' }))
+    a.download = `homie-theme-${t.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'theme'}.json`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+
+  importTheme(text: string) {
+    const cfg = this.config
+    if (!cfg) return
+    const t = fromFile(text, uid(), cfg.settings)
+    cfg.themes.push(t)
+    this.save(`Theme “${t.name}” imported`)
+  }
+
+  // Makes one widget's look the look of every widget: its own settings become
+  // the global widget look and the others lose theirs.
+  shareWidgetStyle(style: WidgetStyle) {
+    const cfg = this.config
+    if (!cfg) return
+    const s = cfg.settings
+    if (style.color) s.widgetColor = style.color
+    if (style.textColor) s.widgetTextColor = style.textColor
+    if (style.borderColor) s.widgetBorderColor = style.borderColor
+    if (style.barColor) s.widgetBarColor = style.barColor
+    if (style.opacity !== undefined) s.widgetOpacity = style.opacity
+    if (style.borderWidth !== undefined) s.widgetBorderWidth = style.borderWidth
+    for (const w of cfg.widgets) for (const k of STYLE_KEYS) delete w[k]
+    this.save('Widget look applied to all widgets')
   }
 
   upsertGroup(id: string | null, name: string) {

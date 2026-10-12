@@ -25,10 +25,12 @@
     [
       `--w-width:${widget.width}px`,
       widget.height > 0 ? `--w-height:${widget.height}px` : '',
-      `--w-bg:color-mix(in srgb, ${widget.color ?? 'var(--tile)'} ${widget.opacity}%, transparent)`,
+      // Only what this widget sets itself; the rest follows the global widget look.
+      widget.color ? `--w-color:${widget.color}` : '',
+      widget.opacity !== undefined ? `--w-opacity:${widget.opacity}` : '',
       widget.textColor ? `--w-text:${widget.textColor}` : '',
       widget.borderColor ? `--w-border:${widget.borderColor}` : '',
-      `--w-border-w:${widget.borderWidth ?? 1}px`,
+      widget.borderWidth !== undefined ? `--w-border-w:${widget.borderWidth}px` : '',
       widget.barColor ? `--w-bar:${widget.barColor}` : '',
     ]
       .filter(Boolean)
@@ -327,10 +329,10 @@
     overflow: auto;
     scrollbar-width: thin;
     padding: 12px 14px;
-    background: var(--w-bg);
-    border: var(--w-border-w) solid var(--w-border, var(--tile-border, var(--line)));
+    background: color-mix(in srgb, var(--w-color, var(--widget-color)) calc(var(--w-opacity, var(--widget-opacity)) * 1%), transparent);
+    border: var(--w-border-w, var(--widget-border-w)) solid var(--w-border, var(--widget-border));
     border-radius: 10px;
-    color: var(--w-text, var(--tile-text, var(--text)));
+    color: var(--w-text, var(--widget-text));
     text-align: left;
   }
   .widget.editing {
@@ -429,7 +431,7 @@
     display: block;
     height: 100%;
     border-radius: 3px;
-    background: var(--w-bar, var(--accent));
+    background: var(--w-bar, var(--widget-bar));
     transition: width 0.4s ease;
   }
   .meter span.hot {
