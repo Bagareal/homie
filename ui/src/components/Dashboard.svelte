@@ -119,7 +119,8 @@
       const wanted = Math.max(1, visible.length + widgets.length, ...widgets.map((w) => w.cols))
       cols = Math.min(fits, wanted, MAX_COLS)
       el.style.setProperty('--cols', String(cols))
-      el.style.width = `${cols * card + (cols - 1) * gap + pad}px`
+      // Never wider than the screen: on a narrow phone the tiles wrap instead.
+      el.style.width = `${Math.min(cols * card + (cols - 1) * gap + pad, host.clientWidth)}px`
     }
     const ro = new ResizeObserver(fit)
     ro.observe(host)

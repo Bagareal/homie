@@ -4,6 +4,7 @@
   import { bytes } from '../lib/format'
   import { app, uid } from '../lib/state.svelte'
   import { STYLE_KEYS } from '../lib/themes'
+  import { mobile } from '../lib/mobile.svelte'
   import { groupHeight, groupWidth } from '../lib/widgetSize'
   import type { HostData, Row, RowType, Widget, WidgetData, WidgetKind } from '../lib/types'
   import ColorField from './ColorField.svelte'
@@ -83,6 +84,7 @@
   let stageW = $state(0)
   let naturalH = $state(0)
   // The size in pixels: counted in groups unless the height is set precisely.
+  const SIZE_LOCKED = 'Not available on mobile: changing the size here would break the desktop view.'
   const widthPx = $derived(groupWidth(w.cols))
   const heightPx = $derived(w.precise ? w.height : groupHeight(w.heightUnits)) // 0 = fit the content
   const fit = $derived(stageW > 0 ? Math.min(1, (stageW - 30) / widthPx) : 1)
@@ -532,6 +534,9 @@
     </fieldset>
     {:else if tab === 'size'}
     <fieldset>
+      <!-- On a phone the size cannot be set: it would only break the desktop view. -->
+      <div class="size-lock" class:locked={mobile.narrow} title={mobile.narrow ? SIZE_LOCKED : undefined}>
+      <div class="size-controls" inert={mobile.narrow}>
       <Slider label="Width (groups)" unit="" min={1} max={3} value={w.cols} oninput={(v) => (w.cols = v)} oncommit={noop} />
       {#if w.precise}
         <Slider label="Height (0 = fit content)" unit="px" min={0} max={1000} value={w.height} oninput={(v) => (w.height = v)} oncommit={noop} />
@@ -550,6 +555,9 @@
         />
         Precise height
       </label>
+      </div>
+      </div>
+      {#if mobile.narrow}<small>{SIZE_LOCKED}</small>{/if}
       <div class="diagram" bind:clientWidth={diagramW} style:height="{Math.max(widgetH, page.card.h) * scale + 16}px" style:gap="{20 * scale}px" aria-hidden="true">
         <div
           class="d-widget"
@@ -709,6 +717,17 @@
     margin: 0;
     padding: 0;
     border: none;
+  }
+  .size-controls {
+    display: grid;
+    gap: 12px;
+  }
+  /* Greyed out where the size cannot be set; the wrapper (not the inert controls
+     inside it) carries the hover text. */
+  .size-lock.locked .size-controls {
+    opacity: 0.45;
+    filter: grayscale(1);
+    cursor: not-allowed;
   }
   .two {
     display: grid;

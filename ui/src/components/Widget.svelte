@@ -333,6 +333,15 @@
     width: 100%;
   }
 
+  /* On a phone a widget is as wide as the screen and as high as its content: the
+     size chosen for the desktop view does not apply (and the editor says so). */
+  @media (max-width: 640px) {
+    .widget:not(.preview) {
+      width: 100%;
+      height: auto;
+    }
+  }
+
   .widget {
     position: relative;
     flex: none;
