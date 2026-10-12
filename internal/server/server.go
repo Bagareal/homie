@@ -43,12 +43,13 @@ type Server struct {
 	dataDir string
 	version string
 	widgets *widgetCache
+	icons   *iconCache
 	// bgMu keeps the clean-up of background images from racing an upload.
 	bgMu sync.Mutex
 }
 
 func New(store *config.Store, checker *status.Checker, ui fs.FS, dataDir, version string) *Server {
-	return &Server{store: store, checker: checker, ui: ui, dataDir: dataDir, version: version, widgets: newWidgetCache()}
+	return &Server{store: store, checker: checker, ui: ui, dataDir: dataDir, version: version, widgets: newWidgetCache(), icons: newIconCache(dataDir)}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -60,6 +61,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/widgets/test", s.testWidget)
 	mux.HandleFunc("GET /api/version", s.getVersion)
 	mux.HandleFunc("GET /icons/{name}", s.icon)
+	mux.HandleFunc("GET /cdn/{collection}/{dir}/{file}", s.cdnIcon)
 	mux.HandleFunc("POST /api/background", s.uploadBackground)
 	mux.HandleFunc("DELETE /api/background", s.deleteBackground)
 	mux.HandleFunc("GET /backgrounds/{name}", s.background)

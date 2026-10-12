@@ -316,3 +316,85 @@ func TestBackgroundsStayWhileAThemeUsesThem(t *testing.T) {
 		t.Error("the image a theme uses must survive removing the background")
 	}
 }
+
+func newIconTestServer(t *testing.T) (*Server, *int) {
+	t.Helper()
+	hits := 0
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		switch r.URL.Path {
+		case "/png/proxmox.png":
+			_, _ = w.Write([]byte("PNGDATA"))
+		case "/tree.json":
+			_, _ = w.Write([]byte(`{"png":["proxmox.png"]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(up.Close)
+	s := newTestServer(t)
+	s.icons.origins = map[string][]string{"dashboard-icons": {"http://127.0.0.1:1", up.URL}}
+	return s, &hits
+}
+
+func TestIconsAreDownloadedOnceAndKept(t *testing.T) {
+	s, hits := newIconTestServer(t)
+	h := s.Handler()
+	for i := 0; i < 3; i++ {
+		w := doJSON(t, h, "GET", "/cdn/dashboard-icons/png/proxmox.png", nil)
+		if w.Code != http.StatusOK || w.Body.String() != "PNGDATA" || w.Header().Get("Content-Type") != "image/png" {
+			t.Fatalf("round %d: %d %q %q", i, w.Code, w.Body.String(), w.Header().Get("Content-Type"))
+		}
+	}
+	if *hits != 1 {
+		t.Errorf("the CDN was asked %d times, want 1", *hits)
+	}
+	if _, err := os.Stat(filepath.Join(s.icons.dir, "dashboard-icons", "png", "proxmox.png")); err != nil {
+		t.Errorf("not kept in the data folder: %v", err)
+	}
+}
+
+func TestIconThatDoesNotExistIsNotAskedAgain(t *testing.T) {
+	s, hits := newIconTestServer(t)
+	h := s.Handler()
+	for i := 0; i < 3; i++ {
+		if w := doJSON(t, h, "GET", "/cdn/dashboard-icons/png/nothing.png", nil); w.Code != http.StatusNotFound {
+			t.Fatalf("got %d", w.Code)
+		}
+	}
+	if *hits != 1 {
+		t.Errorf("the CDN was asked %d times, want 1", *hits)
+	}
+}
+
+func TestIconIndexIsCachedAndOnlyKnownFilesAreFetched(t *testing.T) {
+	s, hits := newIconTestServer(t)
+	h := s.Handler()
+	if w := doJSON(t, h, "GET", "/cdn/dashboard-icons/index/tree.json", nil); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "proxmox") {
+		t.Fatalf("index: %d %q", w.Code, w.Body.String())
+	}
+	before := *hits
+	for _, p := range []string{
+		"/cdn/dashboard-icons/index/secrets.json", // not one of the index files
+		"/cdn/dashboard-icons/png/..%2f..%2fconfig.json",
+		"/cdn/dashboard-icons/png/Proxmox.png", // names are lowercase
+		"/cdn/dashboard-icons/svg/proxmox.png", // format must match the folder
+		"/cdn/elsewhere/png/proxmox.png",       // unknown collection
+		"/cdn/dashboard-icons/png/a.png.exe",
+	} {
+		if w := doJSON(t, h, "GET", p, nil); w.Code != http.StatusNotFound {
+			t.Errorf("%s: got %d, want 404", p, w.Code)
+		}
+	}
+	if *hits != before {
+		t.Errorf("a refused path reached the CDN (%d requests)", *hits-before)
+	}
+}
+
+func TestIconUnreachableCDNGivesBadGatewayThenRecovers(t *testing.T) {
+	s := newTestServer(t)
+	s.icons.origins = map[string][]string{"dashboard-icons": {"http://127.0.0.1:1"}}
+	if w := doJSON(t, s.Handler(), "GET", "/cdn/dashboard-icons/png/proxmox.png", nil); w.Code != http.StatusBadGateway {
+		t.Errorf("got %d, want 502", w.Code)
+	}
+}

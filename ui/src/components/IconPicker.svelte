@@ -46,7 +46,7 @@
       <p class="note">Loading the icon list…</p>
     {:else if status === 'error'}
       <p class="note">
-        Could not load the icon list. Check that this browser can reach cdn.jsdelivr.net.
+        Could not load the icon list. Check that Homie can reach cdn.jsdelivr.net (it downloads the icons itself).
         <button type="button" onclick={load}>Try again</button>
       </p>
     {:else if results.length === 0}

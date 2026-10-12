@@ -29,11 +29,11 @@ const variantOf = (name: string) => (name.endsWith('-dark') ? 'dark' : name.ends
 
 async function build(): Promise<IconEntry[]> {
   const [tree, meta, selfhst] = await Promise.all([
-    fetchJSON<Tree>(`${CDN}/tree.json`),
+    fetchJSON<Tree>(`${CDN}/index/tree.json`),
     // These two only add icons and search terms, so the picker still works
     // (with fewer results) if either can't be loaded.
-    fetchJSON<Meta>(`${CDN}/metadata.json`).catch(() => ({}) as Meta),
-    fetchJSON<SelfhstItem[]>(`${SELFHST_CDN}/index.json`).catch(() => [] as SelfhstItem[]),
+    fetchJSON<Meta>(`${CDN}/index/metadata.json`).catch(() => ({}) as Meta),
+    fetchJSON<SelfhstItem[]>(`${SELFHST_CDN}/index/index.json`).catch(() => [] as SelfhstItem[]),
   ])
   const names = (files: string[] | undefined, ext: string) => new Set((files ?? []).map((f) => f.slice(0, -(ext.length + 1))))
   const png = names(tree.png, 'png')

@@ -353,6 +353,13 @@ button.tape:hover {
   margin-inline: auto;
 }
 
+/* A card holds three tiles per row: three fill it exactly, and a fourth goes on
+   a new row instead of looking as if it nearly fitted. */
+:root[data-layout='grid'] {
+  --row-tiles: 3;
+  --row-width: calc(var(--row-tiles) * var(--tile-min) + (var(--row-tiles) - 1) * var(--gap));
+}
+
 :root[data-layout='grid'] .shelf,
 :root[data-layout='grid'] .shelf:last-of-type {
   --card-pad: 16px;

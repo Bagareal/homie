@@ -6,8 +6,12 @@
 // - an image address (https://...) or a local file (/icons/name.png)
 // - a character or an emoji
 // If empty or it fails to load, the tile shows the service's initials.
-export const CDN = 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons'
-export const SELFHST_CDN = 'https://cdn.jsdelivr.net/gh/selfhst/icons'
+//
+// The collections are not fetched by the browser: Homie downloads each icon the
+// first time it is needed and serves it from its own data folder (relative
+// addresses, so it also works behind a proxy under a path).
+export const CDN = 'cdn/dashboard-icons'
+export const SELFHST_CDN = 'cdn/selfhst'
 
 const FORMATS = ['png', 'svg', 'webp']
 

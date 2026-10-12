@@ -39,6 +39,7 @@ It downloads the latest release and restarts the service; your configuration is 
 | `/var/lib/homie/config.json` | Groups, services, widgets (with their passwords and API keys), themes, and settings |
 | `/var/lib/homie/backgrounds/` | Uploaded background images |
 | `/var/lib/homie/icons/` | Local icons, reachable as `/icons/name.png` |
+| `/var/lib/homie/icon-cache/` | Icons downloaded from the collections, kept so they never need to be fetched again (safe to delete) |
 | `/usr/local/bin/homie` | The program |
 | `/etc/systemd/system/homie.service` | The service (runs as the `homie` system user) |
 
@@ -46,7 +47,7 @@ The configuration can also be exported and imported from the Settings page; the 
 
 ## Icons
 
-In a service's edit dialog, **Search icons** opens a picker with the [dashboard-icons](https://github.com/homarr-labs/dashboard-icons) and [selfh.st](https://selfh.st/icons) collections (searchable by name, alias, and category, with the light/dark variants listed separately); click one to fill the field. The browser needs to reach `cdn.jsdelivr.net` for this.
+In a service's edit dialog, **Search icons** opens a picker with the [dashboard-icons](https://github.com/homarr-labs/dashboard-icons) and [selfh.st](https://selfh.st/icons) collections (searchable by name, alias, and category, with the light/dark variants listed separately); click one to fill the field. Homie downloads each icon itself the first time it is shown (from GitHub, falling back to jsDelivr) and keeps it in its data folder, so your browser never needs to reach a CDN.
 
 You can also type in the Icon field:
 

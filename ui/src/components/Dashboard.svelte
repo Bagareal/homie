@@ -113,8 +113,8 @@
       const root = getComputedStyle(document.documentElement)
       const tile = parseFloat(root.getPropertyValue('--tile-min')) || 120
       const tileGap = parseFloat(root.getPropertyValue('--gap')) || 16
-      // Without a group on screen, the size a card would have (4 tiles + padding + border).
-      const card = shelf?.offsetWidth ?? 4 * tile + 3 * tileGap + 34
+      // Without a group on screen, the size a card would have (3 tiles + padding + border).
+      const card = shelf?.offsetWidth ?? 3 * tile + 2 * tileGap + 34
       const fits = Math.max(1, Math.floor((host.clientWidth - pad + gap) / (card + gap)))
       const wanted = Math.max(1, visible.length + (cfg.widgets.length > 0 && !app.query ? 1 : 0))
       const cols = Math.min(fits, wanted)
