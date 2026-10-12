@@ -1,26 +1,41 @@
 // An icon can be:
-// - a name from the dashboard-icons collection (e.g. "proxmox", "truenas-scale", "adguard-home"),
-//   optionally with its format ("dagster.svg") when it isn't available as a PNG
+// - a name from the dashboard-icons or selfh.st collections (e.g. "proxmox",
+//   "truenas-scale", "yubal"), optionally with its format ("dagster.svg") when
+//   it isn't available as a PNG
+// - "selfhst:name" to pick the selfh.st collection explicitly
 // - an image address (https://...) or a local file (/icons/name.png)
 // - a character or an emoji
 // If empty or it fails to load, the tile shows the service's initials.
 export const CDN = 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons'
+export const SELFHST_CDN = 'https://cdn.jsdelivr.net/gh/selfhst/icons'
 
-// Addresses to try, in order, until one loads. A bare name is tried as a PNG
-// first, then SVG and WebP: a third of the collection has no PNG at all.
+const FORMATS = ['png', 'svg', 'webp']
+
+// Addresses to try, in order, until one loads. A bare name is tried in
+// dashboard-icons first (PNG, then SVG and WebP: a third of that collection has
+// no PNG), then in selfh.st, so a name from either site just works.
 export function iconSources(icon: string): string[] {
   const v = icon.trim()
   if (!v) return []
   if (/^https?:\/\//i.test(v)) return [v]
   if (v.startsWith('/')) return [v.slice(1)] // relativo, per il funzionamento dietro proxy
+
+  const selfhst = /^selfhst:([a-z0-9][a-z0-9-]*)(?:\.(png|svg|webp))?$/i.exec(v)
+  if (selfhst) {
+    const name = selfhst[1].toLowerCase()
+    const ext = selfhst[2]?.toLowerCase()
+    return (ext ? [ext] : FORMATS).map((e) => `${SELFHST_CDN}/${e}/${name}.${e}`)
+  }
+
   const withExt = /^([a-z0-9][a-z0-9-]*)\.(png|svg|webp)$/i.exec(v)
   if (withExt) {
     const ext = withExt[2].toLowerCase()
     return [`${CDN}/${ext}/${withExt[1].toLowerCase()}.${ext}`]
   }
+
   if (/^[a-z0-9][a-z0-9-]*$/i.test(v)) {
     const name = v.toLowerCase()
-    return ['png', 'svg', 'webp'].map((ext) => `${CDN}/${ext}/${name}.${ext}`)
+    return [CDN, SELFHST_CDN].flatMap((base) => FORMATS.map((ext) => `${base}/${ext}/${name}.${ext}`))
   }
   return []
 }

@@ -56,7 +56,7 @@
       <div class="results">
         <div class="icons">
           {#each results.slice(0, shown) as e (e.name)}
-            <button type="button" class="pick" class:on={e.value === current} title={e.name} onclick={() => onpick(e.value)}>
+            <button type="button" class="pick" class:on={e.value === current} title="{e.name} ({e.source})" onclick={() => onpick(e.value)}>
               <img src={e.src} alt="" loading="lazy" />
               <span class="label">{e.name}</span>
               {#if e.variant}<span class="badge">{e.variant}</span>{/if}

@@ -39,11 +39,11 @@ The configuration can also be exported and imported from the Settings page. A PB
 
 ## Icons
 
-In a service's edit dialog, **Search icons** opens a picker with the whole [dashboard-icons](https://github.com/homarr-labs/dashboard-icons) collection (searchable by name, alias, and category, with the light/dark variants listed separately); click one to fill the field. The browser needs to reach `cdn.jsdelivr.net` for this.
+In a service's edit dialog, **Search icons** opens a picker with the [dashboard-icons](https://github.com/homarr-labs/dashboard-icons) and [selfh.st](https://selfh.st/icons) collections (searchable by name, alias, and category, with the light/dark variants listed separately); click one to fill the field. The browser needs to reach `cdn.jsdelivr.net` for this.
 
 You can also type in the Icon field:
 
-- the name of an icon from the [dashboard-icons](https://github.com/homarr-labs/dashboard-icons) collection, for example `proxmox`, `truenas-scale`, `adguard-home`, `jellyfin` (icons that only exist as SVG or WebP are found automatically, or can be written as `name.svg`)
+- the name of an icon from the [dashboard-icons](https://github.com/homarr-labs/dashboard-icons) collection, for example `proxmox`, `truenas-scale`, `adguard-home`, `jellyfin` (a bare name is looked up in dashboard-icons first, then in selfh.st, and icons that only exist as SVG or WebP are found automatically; `selfhst:name` forces selfh.st)
 - the full address of an image
 - a file placed in `/var/lib/homie/icons/`, for example `/icons/router.png`
 - an emoji or a single character
