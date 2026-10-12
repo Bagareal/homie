@@ -261,6 +261,14 @@ func TestLoginVariants(t *testing.T) {
 		t.Errorf("fallback to login_with_api_key: %q", r.Error)
 	}
 	f.noLoginEx = false
+	// A mistyped username does not block a good key.
+	if r := c.Fetch(context.Background(), target(f, "s3cret", "homie_typo", "alerts")); !r.Online {
+		t.Errorf("good key, wrong username: %q", r.Error)
+	}
+	// Whitespace around a pasted key is ignored.
+	if r := c.Fetch(context.Background(), target(f, "  s3cret\n", "homie", "alerts")); !r.Online {
+		t.Errorf("padded key: %q", r.Error)
+	}
 	for _, key := range []string{"wrong", ""} {
 		r := c.Fetch(context.Background(), target(f, key, "homie", "alerts"))
 		if r.Online || !strings.Contains(r.Error, "authentication") {

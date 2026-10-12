@@ -297,7 +297,7 @@
         {nas ? 'TrueNAS address' : 'Glances address'}
         <input bind:value={w.url} placeholder={nas ? 'https://truenas.local' : 'http://192.168.1.10:61208'} inputmode="url" />
         {#if nas}
-          <small>Must start with https://. The certificate is not checked, so a self-signed one works.</small>
+          <small>The NAS itself, starting with https:// (for example its IP address), not an address behind a reverse proxy: a proxy that talks plain http to TrueNAS makes it revoke the key. The certificate is not checked, so a self-signed one works.</small>
         {:else}
           <small>The host must run Glances in web server mode (<code>glances -w</code>, port 61208 by default).</small>
         {/if}

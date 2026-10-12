@@ -139,11 +139,14 @@ func (c *Client) session(ctx context.Context, t Target) (*wsConn, error) {
 	return conn, nil
 }
 
-var errAuth = errors.New("authentication failed (check the API key, and the username if you entered one)")
+var errAuth = errors.New("authentication failed: check the API key and its user, that the key is not revoked in TrueNAS, and that the address is the NAS itself, not a reverse proxy")
 
-// login uses the newer call when a username is given, the older otherwise,
-// and falls back to the other one if the system does not know it.
+// login uses the newer call when a username is given, the older otherwise.
+// If that one fails it tries the other too (a mistyped username must not
+// block a key that is good on its own), and only then gives up.
 func login(c *wsConn, t Target) error {
+	t.APIKey = strings.TrimSpace(t.APIKey)
+	t.Username = strings.TrimSpace(t.Username)
 	tryEx := func() (bool, error) {
 		var r struct {
 			ResponseType string `json:"response_type"`
@@ -163,19 +166,15 @@ func login(c *wsConn, t Target) error {
 	if t.Username != "" {
 		first, second = tryEx, tryKey
 	}
-	for i, try := range []func() (bool, error){first, second} {
+	for _, try := range []func() (bool, error){first, second} {
 		ok, err := try()
 		if ok {
 			return nil
 		}
 		var re *rpcError
-		if errors.As(err, &re) && re.Code == -32601 && i == 0 { // method not found: try the other
-			continue
-		}
 		if err != nil && !errors.As(err, &re) {
-			return describe(err)
+			return describe(err) // the connection broke: no point trying again
 		}
-		return errAuth
 	}
 	return errAuth
 }
