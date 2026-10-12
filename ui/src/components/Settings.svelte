@@ -4,13 +4,16 @@
   import { barHeight } from '../lib/barHeight'
   import { app } from '../lib/state.svelte'
   import type { Config, Settings } from '../lib/types'
+  import ColorField from './ColorField.svelte'
+  import Slider from './Slider.svelte'
 
   const s = $derived(app.config!.settings)
   // svelte-ignore state_referenced_locally
   let title = $state(app.config!.title)
   let version = $state('')
-  let fileInput: HTMLInputElement
-  let bgInput: HTMLInputElement
+  let fileInput: HTMLInputElement | undefined = $state()
+  let bgInput: HTMLInputElement | undefined = $state()
+  let tab = $state<'appearance' | 'general' | 'backup'>('appearance')
 
   onMount(() => {
     api.getVersion().then((v) => (version = v.version)).catch(() => {})
@@ -21,6 +24,15 @@
     app.save('Settings saved')
   }
 
+  // Live preview while dragging or typing; the save happens on commit.
+  function preview<K extends keyof Settings>(key: K, value: Settings[K]) {
+    app.config!.settings[key] = value
+  }
+
+  function commit() {
+    app.save('Settings saved')
+  }
+
   function saveTitle() {
     const t = title.trim()
     if (t === app.config!.title) return
@@ -28,13 +40,9 @@
     app.save('Settings saved')
   }
 
-  function resetColor(key: 'backgroundColor' | 'tileColor' | 'accentColor' | 'cardColor') {
-    set(key, undefined)
-  }
-
   async function uploadBg(e: Event) {
     const file = (e.currentTarget as HTMLInputElement).files?.[0]
-    bgInput.value = ''
+    if (bgInput) bgInput.value = ''
     if (!file) return
     try {
       await api.uploadBackground(file)
@@ -66,7 +74,7 @@
 
   async function importConfig(e: Event) {
     const file = (e.currentTarget as HTMLInputElement).files?.[0]
-    fileInput.value = ''
+    if (fileInput) fileInput.value = ''
     if (!file) return
     try {
       // Untyped on purpose: this may be an export from an earlier Homie
@@ -94,6 +102,11 @@
     }
   }
 
+  const tabs = [
+    ['appearance', 'Appearance'],
+    ['general', 'General'],
+    ['backup', 'Backup'],
+  ] as const
   const themes = [
     ['auto', 'Match system'],
     ['light', 'Light'],
@@ -123,189 +136,142 @@
 
 <div class="scroller">
 <main class="settings">
-  <section>
-    <h2>Appearance</h2>
-    <fieldset>
-      <legend>Theme</legend>
-      <div class="seg">
-        {#each themes as [value, label] (value)}
-          <label class:on={s.theme === value}>
-            <input type="radio" name="theme" {value} checked={s.theme === value} onchange={() => set('theme', value)} />
-            {label}
-          </label>
-        {/each}
-      </div>
-    </fieldset>
-    <fieldset>
-      <legend>Tile density</legend>
-      <div class="seg">
-        {#each densities as [value, label] (value)}
-          <label class:on={s.density === value}>
-            <input type="radio" name="density" {value} checked={s.density === value} onchange={() => set('density', value)} />
-            {label}
-          </label>
-        {/each}
-      </div>
-    </fieldset>
-    <fieldset>
-      <legend>Layout</legend>
-      <div class="seg">
-        {#each layouts as [value, label] (value)}
-          <label class:on={s.layout === value}>
-            <input type="radio" name="layout" {value} checked={s.layout === value} onchange={() => set('layout', value)} />
-            {label}
-          </label>
-        {/each}
-      </div>
-    </fieldset>
-    <p class="hint">List stacks the groups in one column. Grid shows each group as a card, side by side.</p>
-    <div class="color-row">
-      <label>
-        Page background
-        <input type="color" value={s.backgroundColor || '#1c2229'} onchange={(e) => set('backgroundColor', e.currentTarget.value)} />
-      </label>
-      <button type="button" onclick={() => resetColor('backgroundColor')}>Reset</button>
-      <label>
-        Tile background
-        <input type="color" value={s.tileColor || '#2c343e'} onchange={(e) => set('tileColor', e.currentTarget.value)} />
-      </label>
-      <button type="button" onclick={() => resetColor('tileColor')}>Reset</button>
-      <label>
-        Accent
-        <input type="color" value={s.accentColor || '#e9b949'} onchange={(e) => set('accentColor', e.currentTarget.value)} />
-      </label>
-      <button type="button" onclick={() => resetColor('accentColor')}>Reset</button>
+  <div class="tabs" role="tablist" aria-label="Settings sections">
+    {#each tabs as [id, label] (id)}
+      <button type="button" role="tab" class:on={tab === id} aria-selected={tab === id} onclick={() => (tab = id)}>{label}</button>
+    {/each}
+  </div>
+
+  {#if tab === 'appearance'}
+    <section>
+      <h2>Theme and layout</h2>
+      <fieldset>
+        <legend>Theme</legend>
+        <div class="seg">
+          {#each themes as [value, label] (value)}
+            <label class:on={s.theme === value}>
+              <input type="radio" name="theme" {value} checked={s.theme === value} onchange={() => set('theme', value)} />
+              {label}
+            </label>
+          {/each}
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>Tile density</legend>
+        <div class="seg">
+          {#each densities as [value, label] (value)}
+            <label class:on={s.density === value}>
+              <input type="radio" name="density" {value} checked={s.density === value} onchange={() => set('density', value)} />
+              {label}
+            </label>
+          {/each}
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>Layout</legend>
+        <div class="seg">
+          {#each layouts as [value, label] (value)}
+            <label class:on={s.layout === value}>
+              <input type="radio" name="layout" {value} checked={s.layout === value} onchange={() => set('layout', value)} />
+              {label}
+            </label>
+          {/each}
+        </div>
+        <p class="hint">List stacks the groups in one column. Grid shows each group as a card, side by side.</p>
+      </fieldset>
+    </section>
+
+    <section>
+      <h2>Colors</h2>
+      <ColorField label="Page background" cssVar="--bg" theme={s.theme} value={s.backgroundColor} onpreview={(v) => preview('backgroundColor', v)} oncommit={commit} />
+      <ColorField label="Tile background" cssVar="--tile" theme={s.theme} value={s.tileColor} onpreview={(v) => preview('tileColor', v)} oncommit={commit} />
+      <ColorField label="Accent" cssVar="--accent" theme={s.theme} value={s.accentColor} onpreview={(v) => preview('accentColor', v)} oncommit={commit} />
       {#if s.layout === 'grid'}
-        <label>
-          Group card
-          <input type="color" value={s.cardColor || '#242b33'} onchange={(e) => set('cardColor', e.currentTarget.value)} />
-        </label>
-        <button type="button" onclick={() => resetColor('cardColor')}>Reset</button>
+        <ColorField label="Group card" cssVar="--shelf" theme={s.theme} value={s.cardColor} onpreview={(v) => preview('cardColor', v)} oncommit={commit} />
       {/if}
-    </div>
-    <p class="hint">Resetting a color goes back to the theme's own default (light or dark, depending on the Theme setting above).</p>
+      <p class="hint">Pick a color or type its hex code, for example to copy one from another field. "Default" means the theme's own color (light or dark, depending on Theme above).</p>
+    </section>
 
-    <div class="row">
-      <button type="button" onclick={() => bgInput.click()}>{s.backgroundImage ? 'Replace background image' : 'Upload background image'}</button>
+    <section>
+      <h2>Background image</h2>
+      <div class="row">
+        <button type="button" onclick={() => bgInput?.click()}>{s.backgroundImage ? 'Replace background image' : 'Upload background image'}</button>
+        {#if s.backgroundImage}
+          <button type="button" onclick={removeBg}>Remove background image</button>
+        {/if}
+        <input bind:this={bgInput} type="file" accept="image/png,image/jpeg" hidden onchange={uploadBg} />
+      </div>
+      <p class="hint">JPEG or PNG, up to 10 MB. Covers the full page; the page background color still shows at the edges and before it loads.</p>
       {#if s.backgroundImage}
-        <button type="button" onclick={removeBg}>Remove background image</button>
+        <Slider label="Image opacity" value={s.backgroundOpacity} oninput={(v) => preview('backgroundOpacity', v)} oncommit={commit} />
       {/if}
-      <input bind:this={bgInput} type="file" accept="image/png,image/jpeg" hidden onchange={uploadBg} />
-    </div>
-    <p class="hint">JPEG or PNG, up to 10 MB. Covers the full page; the background color above still shows at the edges and before it loads.</p>
+    </section>
 
-    {#if s.backgroundImage}
-      <label class="opacity-row">
-        Background image opacity
-        <input
-          type="range"
-          min="1"
-          max="100"
-          value={s.backgroundOpacity}
-          onchange={(e) => set('backgroundOpacity', Number(e.currentTarget.value))}
-        />
-        <span>{s.backgroundOpacity}%</span>
+    <section>
+      <h2>Transparency</h2>
+      <Slider label="Top bar opacity" value={s.barOpacity} oninput={(v) => preview('barOpacity', v)} oncommit={commit} />
+      {#if s.layout === 'grid'}
+        <Slider label="Group card opacity" value={s.cardOpacity} oninput={(v) => preview('cardOpacity', v)} oncommit={commit} />
+      {/if}
+      <p class="hint">Lower an opacity to let what is behind show through. Double-click a percentage to type an exact value.</p>
+    </section>
+  {:else if tab === 'general'}
+    <section>
+      <h2>General</h2>
+      <label>
+        Dashboard title
+        <input bind:value={title} onchange={saveTitle} maxlength="100" />
       </label>
-      <p class="hint">Lower it to let the page background color underneath show through.</p>
-    {/if}
-
-    {#if s.layout === 'grid'}
-      <label class="opacity-row">
-        Group card opacity
-        <input
-          type="range"
-          min="1"
-          max="100"
-          value={s.cardOpacity}
-          onchange={(e) => set('cardOpacity', Number(e.currentTarget.value))}
-        />
-        <span>{s.cardOpacity}%</span>
+      <label>
+        Check service status every
+        <select value={s.checkInterval} onchange={(e) => set('checkInterval', Number(e.currentTarget.value))}>
+          {#each intervals as [value, label] (value)}
+            <option {value}>{label}</option>
+          {/each}
+        </select>
       </label>
-      <p class="hint">Lower it to make the group cards see-through. Applies to the grid layout.</p>
-    {/if}
-
-    <label class="opacity-row">
-      Top bar opacity
-      <input
-        type="range"
-        min="1"
-        max="100"
-        value={s.barOpacity}
-        onchange={(e) => set('barOpacity', Number(e.currentTarget.value))}
-      />
-      <span>{s.barOpacity}%</span>
-    </label>
-    <p class="hint">Lower it to make the top bar see-through, so the page background shows behind it.</p>
-  </section>
-
-  <section>
-    <h2>General</h2>
-    <label>
-      Dashboard title
-      <input bind:value={title} onchange={saveTitle} maxlength="100" />
-    </label>
-    <label>
-      Check service status every
-      <select value={s.checkInterval} onchange={(e) => set('checkInterval', Number(e.currentTarget.value))}>
-        {#each intervals as [value, label] (value)}
-          <option {value}>{label}</option>
-        {/each}
-      </select>
-    </label>
-    <label class="check">
-      <input type="checkbox" checked={s.openInNewTab} onchange={(e) => set('openInNewTab', e.currentTarget.checked)} />
-      Open services in a new tab
-    </label>
-  </section>
-
-  <section>
-    <h2>Configuration backup</h2>
-    <p class="hint">The file contains groups, services, and settings. Importing it replaces the current configuration.</p>
-    <div class="row">
-      <button type="button" onclick={exportConfig}>Export configuration</button>
-      <button type="button" onclick={() => fileInput.click()}>Import configuration</button>
-      <input bind:this={fileInput} type="file" accept="application/json,.json" hidden onchange={importConfig} />
-    </div>
-  </section>
+      <label class="check">
+        <input type="checkbox" checked={s.openInNewTab} onchange={(e) => set('openInNewTab', e.currentTarget.checked)} />
+        Open services in a new tab
+      </label>
+    </section>
+  {:else}
+    <section>
+      <h2>Configuration backup</h2>
+      <p class="hint">The file contains groups, services, and settings. Importing it replaces the current configuration.</p>
+      <div class="row">
+        <button type="button" onclick={exportConfig}>Export configuration</button>
+        <button type="button" onclick={() => fileInput?.click()}>Import configuration</button>
+        <input bind:this={fileInput} type="file" accept="application/json,.json" hidden onchange={importConfig} />
+      </div>
+    </section>
+  {/if}
 
   {#if version}<p class="version">Homie {version}</p>{/if}
 </main>
 </div>
 
 <style>
-  .color-row {
+  .tabs {
     display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-    margin-top: 10px;
+    gap: 4px;
+    border-bottom: 1px solid var(--line);
   }
-  .color-row label {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 0.9rem;
-  }
-  .color-row input[type='color'] {
-    width: 36px;
-    height: 28px;
-    padding: 2px;
-  }
-
-  .opacity-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-top: 10px;
+  .tabs button {
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background: none;
+    padding: 8px 16px;
+    margin-bottom: -1px;
+    color: var(--muted);
     font-weight: 600;
   }
-  .opacity-row input[type='range'] {
-    flex: 1;
-    max-width: 240px;
+  .tabs button:hover {
+    color: var(--text);
   }
-  .opacity-row span {
-    font-weight: 500;
-    color: var(--muted);
-    min-width: 3.5ch;
+  .tabs button.on {
+    color: var(--text);
+    border-bottom-color: var(--accent);
   }
 </style>
