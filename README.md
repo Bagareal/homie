@@ -18,24 +18,31 @@ Answering "n" to the first question lets you choose the ID, hostname, resources,
 
 ## Updating
 
-From the Proxmox host:
+From the LXC console (or after `pct enter <ID>`), run:
 
 ```bash
-pct exec <ID> -- homie-update
+update
 ```
 
-or run `homie-update` from the LXC console. It downloads the latest release and restarts the service; your configuration is left untouched.
+Or from the Proxmox host, without entering the container:
+
+```bash
+pct exec <ID> -- update
+```
+
+It downloads the latest release and restarts the service; your configuration is left untouched. It installs the latest published GitHub Release, so a change only reaches you once a release has been published; if it says you are already up to date right after one appeared, try again in a minute.
 
 ## Where the data lives
 
 | Path | Contents |
 | --- | --- |
-| `/var/lib/homie/config.json` | Groups, services, and settings |
+| `/var/lib/homie/config.json` | Groups, services, widgets (with their passwords and API keys), themes, and settings |
+| `/var/lib/homie/backgrounds/` | Uploaded background images |
 | `/var/lib/homie/icons/` | Local icons, reachable as `/icons/name.png` |
 | `/usr/local/bin/homie` | The program |
 | `/etc/systemd/system/homie.service` | The service (runs as the `homie` system user) |
 
-The configuration can also be exported and imported from the Settings page. A PBS backup of the LXC includes it.
+The configuration can also be exported and imported from the Settings page; the exported file leaves out widget passwords and API keys (enter them again after importing on another install) and background images. A PBS backup of the LXC includes everything, so keep such backups private: `config.json` holds the widget credentials.
 
 ## Icons
 

@@ -253,5 +253,5 @@ curl -fsSL "${RAW}/scripts/setup.sh" | pct exec "$CTID" -- env HOMIE_REPO="$REPO
 IP="$(pct exec "$CTID" -- hostname -I | awk '{print $1}')"
 echo
 ok "Homie is ready: ${C_B}http://${IP}:8080${C_0}"
-echo "  To update it: pct exec ${CTID} -- homie-update, or run 'update' from inside the container"
+echo "  To update it: pct exec ${CTID} -- update, or run 'update' from inside the container"
 echo
