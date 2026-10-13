@@ -77,7 +77,7 @@ Use **Edit → Add widget**, pick the type, fill in the address and press "Test 
 
 The editor has four tabs (Source, Values, Size, Appearance) with the preview always in view; the Size tab draws the widget to scale next to a real group card. In edit mode the "Add group" and "Add widget" buttons are in the top bar. You choose the size in groups (width: 1, 2 or 3 group columns; height: 1, 2 or 3 rows of tiles, or tick *Precise height* to set it in pixels) and the colors (background with opacity, text, border, bars). While editing, drag a widget wherever you like, even between two groups: groups and widgets share one order. In the grid layout a widget flows like a card.
 
-Homie's server reads the hosts, not your browser, so a host only has to be reachable from Homie's container. Passwords and API keys are stored only on the server: they are never sent back to the browser, are not included in exported backups, and changing a widget's address or username removes them.
+Homie's server reads the hosts, not your browser, so a host only has to be reachable from Homie's container. Each address needs its scheme and port (Glances `http://host:61208`, Proxmox VE `https://host:8006`, UPS `nut://host`), and a name that goes through a reverse proxy usually does not reach the host's own ports: see [Which address to enter](docs/widgets-glances.md#which-address-to-enter). Passwords and API keys are stored only on the server: they are never sent back to the browser, are not included in exported backups, and changing a widget's address or username removes them.
 
 ## Appearance
 

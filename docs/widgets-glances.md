@@ -107,6 +107,15 @@ A password, if you set one, is stored only on the Homie server: it is never sent
 - Some machines report a bogus sensor next to the real ones (for example a Dell `dell_smm` reading 126 °C). The CPU temperature uses the processor package sensor (`Package id 0`, `Tctl`, `Tdie`); you can pick any other sensor by name in the row.
 - Glances does not know about Proxmox VMs and containers; for their count you would need the Proxmox API, which Homie does not use yet.
 
+## Which address to enter
+
+The same rules apply to every widget that talks to a host (Glances, Proxmox VE, TrueNAS, the UPS):
+
+- **Scheme.** Glances speaks plain **`http://`** (it has no TLS unless you started it with certificates). Proxmox VE and TrueNAS speak **`https://`**. With the wrong one the test fails with a connection error. The UPS (NUT) address starts with `nut://`.
+- **Port.** The address names the *machine*, the port names the *program* on it, and each program has its own: Glances **61208**, Proxmox VE **8006**, NUT **3493** (added for you). If you leave the port out, Homie uses the standard one of the scheme (80 or 443), where none of these listens. So write it: `http://192.168.1.20:61208`, `https://192.168.1.20:8006`.
+- **IP address or name.** Both work, a name exactly like an IP, *as long as the name resolves to the machine itself from the Homie container*. A name you use through a reverse proxy (Nginx Proxy Manager, Traefik...) usually points to the **proxy**, not to the host: the proxy listens on 80/443 and does not forward ports such as 61208, so the widget cannot connect. Typical symptom: it works with the IP and not with the name. Use the host's IP address (give it a fixed one), or a DNS name that points straight to the host.
+- To see what a name resolves to, run `nslookup the-name` (or `getent hosts the-name`) from the Homie container.
+
 ## Troubleshooting
 
 | Message or symptom | What to check |

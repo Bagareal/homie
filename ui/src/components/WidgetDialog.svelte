@@ -273,23 +273,55 @@
   // Where each node's Glances is, as typed so far.
   const extraNodes = $derived(Object.fromEntries(Object.entries(w.glances?.nodes ?? {}).filter(([, u]) => u.trim())))
 
-  async function test(silent = false) {
+  const glancesPayload = () => {
+    const g = w.glances
+    return g
+      ? { url: normalizeHttp(g.url), username: (g.username ?? '').trim(), password: g.password ?? '', nodes: Object.fromEntries(Object.entries(extraNodes).map(([n, u]) => [n, normalizeHttp(u)])) }
+      : undefined
+  }
+
+  // The Test button of the Glances section: it tests only Glances, and the result
+  // stays under it.
+  let testingGlances = $state(false)
+  let glancesError = $state('')
+  async function testGlances() {
+    const g = glancesPayload()
+    if (!g) return
+    foundExtra = null
+    glancesError = ''
+    if (!g.url && Object.keys(g.nodes ?? {}).length === 0) {
+      glancesError = 'Enter the Glances address first.'
+      return
+    }
+    testingGlances = true
+    try {
+      const r = await api.testWidget({ id: widgetId ?? undefined, kind: w.kind, url: normalizeUrl(w.url), username: (w.username ?? '').trim(), password: w.password ?? '', only: 'glances', glances: g })
+      foundExtra = r.extra ?? null
+    } catch (e) {
+      glancesError = (e as Error).message
+    } finally {
+      testingGlances = false
+    }
+  }
+
+  // The Test button of the main source. `both` (an existing widget, on opening)
+  // reads Glances too, so its values can be picked right away.
+  async function test(silent = false, both = false) {
     error = ''
     if (!silent) testResult = null
     const url = normalizeUrl(w.url)
     if (!url) return void (silent || (testResult = { ok: false, text: 'Enter the address first.' }))
     testing = true
     try {
-      const g = w.glances
       const r = await api.testWidget({
         id: widgetId ?? undefined,
         kind: w.kind,
         url,
         username: (w.username ?? '').trim(),
         password: w.password ?? '',
-        glances: g ? { url: normalizeHttp(g.url), username: (g.username ?? '').trim(), password: g.password ?? '', nodes: Object.fromEntries(Object.entries(extraNodes).map(([n, u]) => [n, normalizeHttp(u)])) } : undefined,
+        glances: both ? glancesPayload() : undefined,
       })
-      foundExtra = r.extra ?? null
+      if (both) foundExtra = r.extra ?? null
       if (r.ok) {
         found = r.data ?? null
         testResult = { ok: true, text: `Connected${r.version ? ` (${ups ? 'UPS: ' : nas || pve ? '' : 'Glances '}${r.version})` : ''}` }
@@ -304,7 +336,7 @@
   // An existing widget: list what its host offers right away.
   onMount(() => {
     dialog.showModal()
-    if (saved) test(true)
+    if (saved) test(true, true)
   })
 
   async function requestClose() {
@@ -517,12 +549,13 @@
 
     <div class="body">
       <aside class="stage" bind:clientWidth={stageW} aria-label="Preview">
-        <div class="scaler" style:width="{widthPx * fit}px" style:height="{widgetH * fit}px">
+        <div class="scaler" style:width="{widthPx * fit}px" style:height="{naturalH * fit}px">
           <div class="natural" bind:offsetHeight={naturalH} style:width="{widthPx}px" style:transform="scale({fit})">
             <WidgetView widget={w} data={previewData} preview />
           </div>
         </div>
         {#if fit < 1}<small>Shown at {Math.round(fit * 100)}% to fit.</small>{/if}
+        <small>Preview only: its height grows to show every value. On the dashboard the widget keeps the size set in the Size tab.</small>
         {#if previewIsSample}<small>Sample values. Test the connection to see your host's.</small>{/if}
       </aside>
 
@@ -598,6 +631,10 @@
       {:else}
         <small>Glances only supports basic authentication, which is sent unencrypted over plain http. Use it on a trusted network.</small>
       {/if}
+      <div class="test">
+        <button type="button" onclick={() => test()} disabled={testing}>{testing ? 'Testing…' : w.glances ? `Test ${pve ? 'Proxmox' : nas ? 'TrueNAS' : 'UPS'} connection` : 'Test connection'}</button>
+        {#if testResult}<span class:ok={testResult.ok} class:bad={!testResult.ok} role="status">{testResult.text}</span>{/if}
+      </div>
       {#if w.kind !== 'glances'}
         <div class="extra">
           <label class="check">
@@ -635,6 +672,10 @@
               <small>With a cluster, test the connection first: each node's Glances address can then be entered here.</small>
             {/if}
             <small>Glances only supports basic authentication, which is sent unencrypted over plain http. Use it on a trusted network.</small>
+            <div class="test">
+              <button type="button" onclick={testGlances} disabled={testingGlances}>{testingGlances ? 'Testing…' : 'Test Glances'}</button>
+              {#if glancesError}<span class="bad" role="status">{glancesError}</span>{/if}
+            </div>
             {#if foundExtra}
               <ul class="probe">
                 {#if foundExtra.glances}
@@ -648,10 +689,6 @@
           {/if}
         </div>
       {/if}
-      <div class="test">
-        <button type="button" onclick={() => test()} disabled={testing}>{testing ? 'Testing…' : 'Test connection'}</button>
-        {#if testResult}<span class:ok={testResult.ok} class:bad={!testResult.ok} role="status">{testResult.text}</span>{/if}
-      </div>
     </fieldset>
     {:else if tab === 'values'}
     <fieldset>

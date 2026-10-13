@@ -38,13 +38,22 @@ Values you can show:
 | Failed tasks | tasks that failed in the last 24 hours; hover for the list |
 | Proxmox version | |
 
+### Which address to enter
+
+`https://192.168.1.10:8006`: the scheme is **https**, the port is **8006** (without a port Homie would try 443), and the host can be an IP or a name. If you normally open Proxmox through a reverse proxy by name, that name points to the proxy and the widget will usually only work through it on 443; the node's own IP with `:8006` is the most reliable. The rules for every widget are collected in [widgets-glances.md](widgets-glances.md#which-address-to-enter).
+
 ## Temperatures, disks and network (Glances)
 
-The Proxmox API does not report temperatures. The same widget can read them from **Glances** running on the node: in the Source tab tick **Also read this machine's Glances**, enter its address (`http://192.168.1.10:61208`) and test. The menu then offers a group of Glances values (CPU, temperature, memory, swap, load, disks, network) that you mix freely with the Proxmox ones. Setting up Glances on the host is explained in [widgets-glances.md](widgets-glances.md).
+The Proxmox API does not report temperatures. The same widget can read them from **Glances** running on the node: in the Source tab tick **Also read this machine's Glances**, enter its address (`http://192.168.1.10:61208`: **http**, not https, and with the port) and press **Test Glances**. The widget has two Test buttons, one in each section (*Test Proxmox connection* and *Test Glances*), so you always know what has been checked and what has not; the result stays under the button you pressed. The menu then offers a group of Glances values (CPU, temperature, memory, swap, load, disks, network) that you mix freely with the Proxmox ones. Setting up Glances on the host is explained in [widgets-glances.md](widgets-glances.md).
 
 **Cluster:** every node has its own Glances. After testing the connection, the nodes found are listed under the Glances address, each with its own address field (the same login is used for all). The menu then has one Glances group per node, and each row remembers which node it reads.
 
 If Glances cannot be reached, only its rows show `n/a` (hover for the reason); the Proxmox rows keep working.
+
+## The editor
+
+- The preview on the left starts at the size set in the Size tab and **grows to show every value** instead of scrolling. That is for the preview only: on the dashboard the widget keeps the size you chose (and scrolls if it has more rows than fit).
+- Press **Test Proxmox connection** after entering the address and the token, then **Test Glances** after the Glances address.
 
 ## Troubleshooting
 

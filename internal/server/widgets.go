@@ -306,6 +306,9 @@ func (s *Server) testWidget(w http.ResponseWriter, r *http.Request) {
 		URL      string `json:"url"`
 		Username string `json:"username"`
 		Password string `json:"password"`
+		// Only "glances" tests just the extra source: the editor has one Test button
+		// for the main source and another for Glances.
+		Only string `json:"only"`
 		// Glances is the extra source of the widget, tested along with the main one.
 		Glances *struct {
 			URL      string            `json:"url"`
@@ -319,6 +322,23 @@ func (s *Server) testWidget(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Kind == "" {
 		req.Kind = "glances"
+	}
+	var stored *config.Widget
+	if req.ID != "" {
+		for _, saved := range s.store.Get().Widgets {
+			if saved.ID == req.ID {
+				saved := saved
+				stored = &saved
+			}
+		}
+	}
+	if req.Only == "glances" {
+		if req.Glances == nil {
+			writeError(w, http.StatusBadRequest, "enter the Glances address first")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "extra": s.testGlances(r.Context(), stored, req.Glances.URL, req.Glances.Username, req.Glances.Password, req.Glances.Nodes)})
+		return
 	}
 	probe := config.Widget{ID: "probe", Name: "probe", Kind: req.Kind, URL: strings.TrimSpace(req.URL), Rows: []config.Row{}}
 	probe.Refresh, probe.Cols, probe.HeightUnits = 5, 1, 1
@@ -339,15 +359,6 @@ func (s *Server) testWidget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pw := req.Password
-	var stored *config.Widget
-	if req.ID != "" {
-		for _, saved := range s.store.Get().Widgets {
-			if saved.ID == req.ID {
-				saved := saved
-				stored = &saved
-			}
-		}
-	}
 	// Only for the same address and username: otherwise anyone who can open
 	// Homie could send the stored password to a server of their own.
 	if pw == "" && stored != nil && stored.Kind == req.Kind && stored.URL == probe.URL && stored.Username == req.Username {

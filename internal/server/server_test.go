@@ -465,3 +465,29 @@ func TestExtraGlancesSourceIsMergedAndItsPasswordKept(t *testing.T) {
 		t.Fatalf("the Glances password followed a changed address: %q", p)
 	}
 }
+
+func TestTestWidgetCanTestOnlyTheGlancesSource(t *testing.T) {
+	s := newTestServer(t)
+	g := fakeGlances(t)
+	h := s.Handler()
+	var r struct {
+		OK    bool `json:"ok"`
+		Extra struct {
+			Glances struct {
+				OK      bool   `json:"ok"`
+				Version string `json:"version"`
+			} `json:"glances"`
+		} `json:"extra"`
+	}
+	// The main address is not needed, and not even valid: only Glances is tested.
+	w := doJSON(t, h, "POST", "/api/widgets/test", map[string]any{
+		"kind": "proxmox", "url": "", "only": "glances",
+		"glances": map[string]any{"url": g.URL, "username": "glances", "password": "s3cret"},
+	})
+	if err := json.Unmarshal(w.Body.Bytes(), &r); err != nil || !r.OK || !r.Extra.Glances.OK || r.Extra.Glances.Version != "Glances 4.5.8" {
+		t.Fatalf("got %d %s", w.Code, w.Body.String())
+	}
+	if w := doJSON(t, h, "POST", "/api/widgets/test", map[string]any{"kind": "proxmox", "only": "glances"}); w.Code != http.StatusBadRequest {
+		t.Fatalf("no Glances address: got %d", w.Code)
+	}
+}

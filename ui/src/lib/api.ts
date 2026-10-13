@@ -39,6 +39,8 @@ export const testWidget = (w: {
   url: string
   username: string
   password: string
+  // "glances": test only the extra source (the editor has a Test button for each source).
+  only?: 'glances'
   // The extra Glances source, tested along with the main one.
   glances?: { url: string; username: string; password: string; nodes?: Record<string, string> }
 }) =>

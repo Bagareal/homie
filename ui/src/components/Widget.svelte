@@ -633,6 +633,13 @@
     color: var(--w-text, var(--widget-text));
     text-align: left;
   }
+  /* In the editor the preview starts at the size chosen and grows to show every
+     value instead of scrolling. On the dashboard the size is kept. */
+  .widget.preview {
+    height: auto;
+    min-height: var(--w-height, 0);
+    overflow: visible;
+  }
   .widget.editing {
     cursor: grab;
   }
