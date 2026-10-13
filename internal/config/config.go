@@ -29,6 +29,9 @@ var safeFilename = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,120}$`)
 type Settings struct {
 	CheckInterval int  `json:"checkInterval"` // seconds
 	OpenInNewTab  bool `json:"openInNewTab"`
+	// WidgetCollapseBelow collapses the widgets in a window narrower than this
+	// many pixels (0 = never). What each device does by hand is kept in its browser.
+	WidgetCollapseBelow int `json:"widgetCollapseBelow,omitempty"`
 	Appearance
 }
 
@@ -220,6 +223,8 @@ type Row struct {
 	// to each other. The bar follows the load, or the temperature when alone.
 	Load bool `json:"load,omitempty"`
 	Temp bool `json:"temp,omitempty"`
+	// Collapsed marks a value shown when the widget is collapsed (up to maxCollapsedRows).
+	Collapsed bool `json:"collapsed,omitempty"`
 	// Source says where the value comes from: empty is the widget's own source,
 	// "glances" its extra Glances source or "nut" its extra UPS source (then Type
 	// is a row type of that kind).
@@ -235,6 +240,8 @@ type Row struct {
 const (
 	maxWidgets    = 20
 	maxWidgetRows = 30
+	// A collapsed widget shows at most this many values.
+	maxCollapsedRows = 4
 )
 
 // RowTypes lists the kinds of row each kind of widget can have.
@@ -591,6 +598,9 @@ func (c Config) Validate() error {
 	if len(c.Title) > 100 {
 		return errors.New("title too long (100 characters max)")
 	}
+	if c.Settings.WidgetCollapseBelow < 0 || c.Settings.WidgetCollapseBelow > 5000 {
+		return errors.New("the collapse width must be between 0 and 5000 px")
+	}
 	if c.Settings.CheckInterval < 10 || c.Settings.CheckInterval > 3600 {
 		return errors.New("the check interval must be between 10 and 3600 seconds")
 	}
@@ -739,11 +749,18 @@ func validateRows(w Widget) error {
 		return fmt.Errorf("widget %q has too many rows (%d max)", w.Name, maxWidgetRows)
 	}
 	ids := map[string]bool{}
+	collapsed := 0
 	for _, r := range w.Rows {
+		if r.Collapsed {
+			collapsed++
+		}
 		if r.ID == "" || len(r.ID) > 40 || ids[r.ID] {
 			return fmt.Errorf("widget %q has a row with a missing or duplicate id", w.Name)
 		}
 		ids[r.ID] = true
+		if collapsed > maxCollapsedRows {
+			return fmt.Errorf("widget %q: a collapsed widget shows at most %d values", w.Name, maxCollapsedRows)
+		}
 		kind := w.Kind
 		switch r.Source {
 		case "":

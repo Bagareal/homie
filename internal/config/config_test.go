@@ -593,6 +593,30 @@ func TestUPSAsAnExtraSource(t *testing.T) {
 	}
 }
 
+func TestCollapsedWidgets(t *testing.T) {
+	c := widgetConfig()
+	c.Widgets[0].Rows = []Row{
+		{ID: "a", Type: "cpu", Load: true, Collapsed: true}, {ID: "b", Type: "mem", Collapsed: true}, {ID: "c", Type: "uptime", Collapsed: true},
+		{ID: "d", Type: "swap", Collapsed: true}, {ID: "e", Type: "load"},
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("four collapsed values are fine: %v", err)
+	}
+	c.Widgets[0].Rows[4].Collapsed = true
+	if err := c.Validate(); err == nil {
+		t.Error("a collapsed widget shows at most four values")
+	}
+	c = widgetConfig()
+	c.Settings.WidgetCollapseBelow = 1500
+	if err := c.Validate(); err != nil {
+		t.Errorf("a collapse width should validate: %v", err)
+	}
+	c.Settings.WidgetCollapseBelow = -1
+	if err := c.Validate(); err == nil {
+		t.Error("a negative collapse width must be refused")
+	}
+}
+
 func TestSettingsStayFlatInTheJSON(t *testing.T) {
 	// Appearance is embedded, so a saved config keeps its old shape and old
 	// files keep loading.

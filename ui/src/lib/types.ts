@@ -51,6 +51,8 @@ export interface Appearance {
 export interface Settings extends Appearance {
   checkInterval: number
   openInNewTab: boolean
+  // Widgets collapse in a window narrower than this many px (0 or unset = never).
+  widgetCollapseBelow?: number
 }
 
 // How one widget looks when it differs from the global widget look.
@@ -87,6 +89,8 @@ export interface Row {
   temp?: boolean
   // client rows (UPS): what the user says the machine is.
   role?: 'primary' | 'secondary'
+  // Shown when the widget is collapsed (up to 4 per widget).
+  collapsed?: boolean
   // Where the value comes from: the widget's own source, or its extra Glances source
   // (of a Proxmox cluster, `node` says which node's Glances).
   source?: 'glances' | 'nut'

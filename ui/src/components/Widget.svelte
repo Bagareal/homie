@@ -3,6 +3,7 @@
   import { ago, bytes, duration, percent, rate } from '../lib/format'
   import type { HostData, Row, RowType, Widget, WidgetData } from '../lib/types'
   import EditIcon from './EditIcon.svelte'
+  import { isCollapsed, setCollapsed } from '../lib/collapse.svelte'
 
   let {
     widget,
@@ -10,6 +11,7 @@
     onedit,
     span,
     preview = false,
+    collapsed: previewCollapsed = false,
   }: {
     widget: Widget
     data: WidgetData | undefined
@@ -18,11 +20,15 @@
     span?: number
     // Rendered inside the editor: not draggable or clickable.
     preview?: boolean
+    // In the editor's preview: show the collapsed view.
+    collapsed?: boolean
   } = $props()
 
   let drop = $state<'before' | 'after' | null>(null)
   let vertical = $state(false)
   const editable = $derived(app.editing && !preview)
+  // Collapsed: only a few values, side by side. Never while editing.
+  const folded = $derived(preview ? previewCollapsed : editable ? false : isCollapsed(widget.id, app.config?.settings.widgetCollapseBelow))
 
   const style = $derived(
     [
@@ -505,6 +511,14 @@
     return out
   })
 
+  // The collapsed view: the first line of each value ticked "Collapsed view" (up to
+  // four), or of the first four values when none is.
+  const brief = $derived.by(() => {
+    const ticked = widget.rows.filter((r) => r.collapsed)
+    const picked = (ticked.length ? ticked : widget.rows).slice(0, 4)
+    return picked.flatMap((r) => lines.find((l) => l.key === r.id || l.key.startsWith(`${r.id}:`)) ?? [])
+  })
+
   // Drop markers: left/right when blocks sit side by side (widgets always
   // do; groups do in the grid layout), top/bottom when a group is stacked.
   const grid = $derived(app.config?.settings.layout === 'grid')
@@ -555,11 +569,25 @@
     {#if data}
       <span class="dot" class:online={data.online} title={data.online ? 'Online' : 'Unreachable'}></span>
     {/if}
+    {#if !preview && !editable}
+      <button type="button" class="fold" aria-label={folded ? 'Expand the widget' : 'Collapse the widget'} aria-expanded={!folded} title={folded ? 'Expand' : 'Collapse'} onclick={() => setCollapsed(widget.id, !folded)}>
+        <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d={folded ? 'M2 4l4 4 4-4' : 'M2 8l4-4 4 4'} fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+      </button>
+    {/if}
   </div>
   {#if !data}
     <p class="note">Loading…</p>
   {:else if !data.online}
     <p class="note down">Unreachable: {data.error}</p>
+  {:else if folded}
+    <div class="brief">
+      {#each brief as c (c.key)}
+        <div class="cell" class:bad={c.bad} title={c.title ? `${c.label}: ${c.title}` : c.label}>
+          <b>{c.value}</b>
+          <span>{c.label}</span>
+        </div>
+      {/each}
+    </div>
   {:else}
     <dl>
       {#each lines as r (r.key)}
@@ -600,7 +628,7 @@
     <EditIcon />
   </div>
 {:else}
-  <section class="widget" class:preview {style} aria-label={widget.name}>
+  <section class="widget" class:preview class:folded {style} aria-label={widget.name}>
     {@render body()}
   </section>
 {/if}
@@ -641,6 +669,54 @@
     height: auto;
     min-height: var(--w-height, 0);
     overflow: visible;
+  }
+  .widget.folded {
+    height: auto;
+    min-height: 0;
+  }
+  .fold {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    opacity: 0.6;
+    cursor: pointer;
+  }
+  .fold:hover {
+    opacity: 1;
+    background: color-mix(in srgb, currentColor 12%, transparent);
+  }
+  .brief {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 8px 14px;
+  }
+  .cell {
+    display: grid;
+    min-width: 0;
+    text-align: center;
+  }
+  .cell b {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .cell span {
+    max-width: 9em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.65rem;
+    opacity: 0.6;
+  }
+  .cell.bad b {
+    color: var(--down);
   }
   .widget.editing {
     cursor: grab;

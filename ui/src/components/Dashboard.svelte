@@ -4,6 +4,7 @@
   import { barHeight } from '../lib/barHeight'
   import { cardWidth } from '../lib/widgetSize'
   import { mobile, setTab } from '../lib/mobile.svelte'
+  import { isCollapsed, toggleAll } from '../lib/collapse.svelte'
   import { clearDraft, loadDraft, type ItemFields } from '../lib/draft'
   import type { Item, Widget as WidgetT } from '../lib/types'
   import Shelf from './Shelf.svelte'
@@ -77,6 +78,9 @@
   })
   // On a phone the widgets get their own tab so they don't push the services
   // down the page. A search always looks at services.
+  // The button that collapses or opens every widget (not on a phone, which has its own tab).
+  const below = $derived(app.config?.settings.widgetCollapseBelow)
+  const allCollapsed = $derived(cfg.widgets.length > 0 && cfg.widgets.every((w) => isCollapsed(w.id, below)))
   const tabbed = $derived(mobile.narrow && cfg.widgets.length > 0)
   const tab = $derived(!tabbed ? 'all' : q ? 'services' : mobile.tab)
   const shown = $derived(tab === 'all' ? blocks : blocks.filter((b) => (b.kind === 'group') === (tab === 'services')))
@@ -170,6 +174,9 @@
     <p class="summary" class:alert={anyDown}>{summary}</p>
   {/if}
   <nav class="actions">
+    {#if cfg.widgets.length > 0 && !app.editing && !mobile.narrow}
+      <button type="button" onclick={() => toggleAll(cfg.widgets.map((w) => w.id), below)}>{allCollapsed ? 'Expand widgets' : 'Collapse widgets'}</button>
+    {/if}
     {#if app.editing}
       {#if tab !== 'widgets'}
         <button type="button" onclick={() => (groupEdit = { id: null })}>Add group</button>

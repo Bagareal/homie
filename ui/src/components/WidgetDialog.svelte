@@ -122,6 +122,9 @@
   // The preview is shrunk to fit its column when the widget is wider than it.
   let stageW = $state(0)
   let naturalH = $state(0)
+  let previewFolded = $state(false)
+  // At most four values are shown when the widget is collapsed.
+  const briefCount = $derived(w.rows.filter((r) => r.collapsed).length)
   // The size in pixels: counted in groups unless the height is set precisely.
   const SIZE_LOCKED = 'Not available on mobile: changing the size here would break the desktop view.'
   const widthPx = $derived(groupWidth(w.cols))
@@ -631,9 +634,10 @@
       <aside class="stage" bind:clientWidth={stageW} aria-label="Preview">
         <div class="scaler" style:width="{widthPx * fit}px" style:height="{naturalH * fit}px">
           <div class="natural" bind:offsetHeight={naturalH} style:width="{widthPx}px" style:transform="scale({fit})">
-            <WidgetView widget={w} data={previewData} preview />
+            <WidgetView widget={w} data={previewData} preview collapsed={previewFolded} />
           </div>
         </div>
+        <label class="check"><input type="checkbox" bind:checked={previewFolded} /> Preview collapsed</label>
         {#if fit < 1}<small>Shown at {Math.round(fit * 100)}% to fit.</small>{/if}
         <small>Preview only: its height grows to show every value. On the dashboard the widget keeps the size set in the Size tab.</small>
         {#if previewIsSample}<small>Sample values. Test the connection to see your host's.</small>{/if}
@@ -796,7 +800,7 @@
     </fieldset>
     {:else if tab === 'values'}
     <fieldset>
-      <small>Drag to reorder (or use the arrows). {pve ? 'Guests, storages and nodes' : ups ? 'Clients and other values' : nas ? 'Pools and drives' : 'Disks, sensors and network cards'} can be chosen once the connection has been tested.</small>
+      <small>Tick “Collapsed” on up to four values to show only those when the widget is collapsed (none ticked: the first four). Drag to reorder (or use the arrows). {pve ? 'Guests, storages and nodes' : ups ? 'Clients and other values' : nas ? 'Pools and drives' : 'Disks, sensors and network cards'} can be chosen once the connection has been tested.</small>
       <ul class="rows">
         {#each w.rows as r, i (r.id)}
           {@const sd = srcData(r)}
@@ -836,6 +840,14 @@
                   <label class="check"><input type="checkbox" checked={r.load} onchange={(e) => setCpu(r, 'load', e.currentTarget.checked)} /> Load</label>
                   <label class="check"><input type="checkbox" checked={r.temp} onchange={(e) => setCpu(r, 'temp', e.currentTarget.checked)} /> Temperature</label>
                 {/if}
+                <label class="check" title="Show this value when the widget is collapsed (up to four)">
+                  <input
+                    type="checkbox"
+                    checked={!!r.collapsed}
+                    disabled={!r.collapsed && briefCount >= 4}
+                    onchange={(e) => (r.collapsed = e.currentTarget.checked || undefined)}
+                  /> Collapsed
+                </label>
                 <span class="spacer"></span>
                 <button type="button" class="icon-btn" aria-label="Move up" disabled={i === 0} onclick={() => move(i, i - 1)}>▲</button>
                 <button type="button" class="icon-btn" aria-label="Move down" disabled={i === w.rows.length - 1} onclick={() => move(i, i + 1)}>▼</button>
