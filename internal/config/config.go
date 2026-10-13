@@ -125,7 +125,8 @@ type Group struct {
 type Widget struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
-	// Kind is the data source: "glances" or "truenas".
+	// Kind is the data source: "glances", "truenas" or "nut" (a UPS; its URL is
+	// nut://host[:port][/ups]).
 	Kind     string `json:"kind"`
 	URL      string `json:"url"`
 	Username string `json:"username,omitempty"`
@@ -176,6 +177,9 @@ type Row struct {
 	// to each other. The bar follows the load, or the temperature when alone.
 	Load bool `json:"load,omitempty"`
 	Temp bool `json:"temp,omitempty"`
+	// Role, for a client row of a UPS: "primary" or "secondary" (upsd does not
+	// report it, so it is what the user says the machine is).
+	Role string `json:"role,omitempty"`
 }
 
 const (
@@ -187,6 +191,7 @@ const (
 var RowTypes = map[string][]string{
 	"glances": {"cpu", "mem", "swap", "load", "uptime", "temp", "disk", "network"},
 	"truenas": {"cpu", "mem", "load", "uptime", "version", "pool", "drive", "alerts", "apps"},
+	"nut":     {"status", "charge", "runtime", "upsload", "power", "voltage", "model", "var", "clients", "client"},
 }
 
 type Config struct {
@@ -570,8 +575,15 @@ func (c Config) validateWidgets(seen map[string]bool) error {
 			return fmt.Errorf("invalid kind for widget %q: %q", w.Name, w.Kind)
 		}
 		u, err := url.Parse(w.URL)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || len(w.URL) > 300 {
-			return fmt.Errorf("invalid address for widget %q: must start with http:// or https://", w.Name)
+		if err != nil {
+			return fmt.Errorf("invalid address for widget %q", w.Name)
+		}
+		scheme, want := "http:// or https://", u.Scheme == "http" || u.Scheme == "https"
+		if w.Kind == "nut" {
+			scheme, want = "nut://", u.Scheme == "nut"
+		}
+		if !want || u.Host == "" || len(w.URL) > 300 {
+			return fmt.Errorf("invalid address for widget %q: must start with %s", w.Name, scheme)
 		}
 		if w.Kind == "truenas" && u.Scheme != "https" {
 			// TrueNAS revokes an API key that is sent without TLS.
@@ -617,6 +629,12 @@ func validateRows(w Widget) error {
 		}
 		if len(r.Key) > 200 || len(r.Name) > 60 {
 			return fmt.Errorf("widget %q has a row whose name or key is too long", w.Name)
+		}
+		if r.Role != "" && r.Role != "primary" && r.Role != "secondary" {
+			return fmt.Errorf("widget %q has a client that is neither primary nor secondary", w.Name)
+		}
+		if r.Type == "client" && r.Key == "" {
+			return fmt.Errorf("widget %q: a client needs its address", w.Name)
 		}
 		if r.Type == "cpu" && !r.Load && !r.Temp {
 			return fmt.Errorf("widget %q: a CPU row must show the load, the temperature, or both", w.Name)

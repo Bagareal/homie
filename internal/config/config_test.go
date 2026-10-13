@@ -464,6 +464,33 @@ func TestTrueNASWidgets(t *testing.T) {
 	}
 }
 
+func TestUPSWidgets(t *testing.T) {
+	c := widgetConfig()
+	c.Widgets[0].Kind = "nut"
+	c.Widgets[0].URL = "nut://192.168.1.10:3493/myups"
+	c.Widgets[0].Rows = []Row{{ID: "a", Type: "status"}, {ID: "b", Type: "charge"}, {ID: "c", Type: "client", Key: "192.168.1.10", Name: "NAS", Role: "primary"}, {ID: "d", Type: "clients"}}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("a UPS widget should validate: %v", err)
+	}
+	c.Widgets[0].URL = "http://192.168.1.10"
+	if err := c.Validate(); err == nil {
+		t.Error("a UPS address must start with nut://")
+	}
+	c.Widgets[0].URL = "nut://192.168.1.10"
+	c.Widgets[0].Rows = []Row{{ID: "a", Type: "client"}}
+	if err := c.Validate(); err == nil {
+		t.Error("a client row needs an address")
+	}
+	c.Widgets[0].Rows = []Row{{ID: "a", Type: "client", Key: "10.0.0.2", Role: "boss"}}
+	if err := c.Validate(); err == nil {
+		t.Error("a client is either primary or secondary")
+	}
+	c.Widgets[0].Rows = []Row{{ID: "a", Type: "cpu", Load: true}}
+	if err := c.Validate(); err == nil {
+		t.Error("a Glances row on a UPS widget should be refused")
+	}
+}
+
 func TestSettingsStayFlatInTheJSON(t *testing.T) {
 	// Appearance is embedded, so a saved config keeps its old shape and old
 	// files keep loading.

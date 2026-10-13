@@ -30,10 +30,27 @@
     drive: 'Drive temperature',
     alerts: 'Alerts',
     apps: 'Apps',
+    status: 'UPS status',
+    charge: 'Battery charge',
+    runtime: 'Runtime left',
+    upsload: 'UPS load',
+    power: 'Power',
+    voltage: 'Voltage',
+    model: 'UPS model',
+    var: 'Other value',
+    clients: 'Connected clients',
+    client: 'Client',
   }
 
   const defaultRows = (kind: WidgetKind): Row[] =>
-    kind === 'truenas'
+    kind === 'nut'
+      ? [
+          { id: uid(), type: 'status' },
+          { id: uid() + 'c', type: 'charge' },
+          { id: uid() + 'r', type: 'runtime' },
+          { id: uid() + 'l', type: 'upsload' },
+        ]
+      : kind === 'truenas'
       ? [
           { id: uid(), type: 'pool' },
           { id: uid() + 'a', type: 'alerts' },
@@ -111,6 +128,7 @@
   }
 
   const nas = $derived(w.kind === 'truenas')
+  const ups = $derived(w.kind === 'nut')
   // Ticked: on save, this widget's look becomes the look of every widget.
   let shareLook = $state(false)
   const global = $derived(app.config!.settings)
@@ -129,7 +147,7 @@
   // TrueNAS is only ever reached over https (it revokes API keys sent without TLS).
   function normalizeUrl(raw: string): string {
     const v = raw.trim()
-    return v && !/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? `${w.kind === 'truenas' ? 'https' : 'http'}://${v}` : v
+    return v && !/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? `${w.kind === 'truenas' ? 'https' : w.kind === 'nut' ? 'nut' : 'http'}://${v}` : v
   }
 
   // What the editor previews until the host has been read.
@@ -170,7 +188,27 @@
       network: [{ name: 'eth0', rx: 1.4 * 2 ** 20, tx: 310 * 2 ** 10 }],
     },
   }
-  const sample = $derived(nas ? sampleNAS : sampleGlances)
+  const sampleUPS: WidgetData = {
+    online: true,
+    updatedAt: '',
+    data: {
+      ups: 'myups',
+      vars: {
+        'ups.status': 'OL CHRG',
+        'ups.mfr': 'APC',
+        'ups.model': 'Back-UPS ES 700G',
+        'battery.charge': '100',
+        'battery.runtime': '2100',
+        'ups.load': '23',
+        'ups.realpower.nominal': '405',
+        'input.voltage': '229.0',
+        'input.voltage.nominal': '230',
+        'output.voltage': '229.0',
+      },
+      clients: ['127.0.0.1', '192.168.1.20'],
+    },
+  }
+  const sample = $derived(ups ? sampleUPS : nas ? sampleNAS : sampleGlances)
   const live = $derived(widgetId ? app.widgetData[widgetId] : undefined)
   const previewData = $derived<WidgetData>(
     found ? { online: true, updatedAt: '', data: found } : live?.online && !addressChanged ? live : sample,
@@ -187,7 +225,7 @@
       const r = await api.testWidget({ id: widgetId ?? undefined, kind: w.kind, url, username: (w.username ?? '').trim(), password: w.password ?? '' })
       if (r.ok) {
         found = r.data ?? null
-        testResult = { ok: true, text: `Connected${r.version ? ` (${nas ? '' : 'Glances '}${r.version})` : ''}` }
+        testResult = { ok: true, text: `Connected${r.version ? ` (${ups ? 'UPS: ' : nas ? '' : 'Glances '}${r.version})` : ''}` }
       } else if (!silent) testResult = { ok: false, text: r.error ?? 'Failed' }
     } catch (e) {
       if (!silent) testResult = { ok: false, text: (e as Error).message }
@@ -252,12 +290,13 @@
     if (!w.name.trim()) return fail('source', 'Enter a name for the widget.')
     try {
       const u = new URL(url)
-      if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error()
+      if (ups ? u.protocol !== 'nut:' : u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error()
       if (nas && u.protocol !== 'https:') return fail('source', 'A TrueNAS address must start with https:// (TrueNAS revokes an API key sent over plain http).')
     } catch {
-      return fail('source', `Enter a valid address, for example ${nas ? 'https://truenas.local' : 'http://192.168.1.10:61208'}.`)
+      return fail('source', `Enter a valid address, for example ${ups ? 'nut://192.168.1.10' : nas ? 'https://truenas.local' : 'http://192.168.1.10:61208'}.`)
     }
     if (w.rows.length === 0) return fail('values', 'Add at least one value to show.')
+    if (w.rows.some((r) => r.type === 'client' && !(r.key ?? '').trim())) return fail('values', 'A client needs its address (the connected ones are listed once the connection is tested).')
     const out: Widget = {
       ...$state.snapshot(w),
       id: saved?.id ?? uid(),
@@ -355,23 +394,27 @@
           <select value={w.kind} onchange={(e) => setKind(e.currentTarget.value as WidgetKind)}>
             <option value="glances">Glances (any Linux host, e.g. Proxmox)</option>
             <option value="truenas">TrueNAS (25.04 or later)</option>
+            <option value="nut">UPS (NUT server)</option>
           </select>
         </label>
       {/if}
       <label>
         Name
         <!-- svelte-ignore a11y_autofocus -->
-        <input bind:value={w.name} maxlength="60" placeholder={nas ? 'TrueNAS' : 'Proxmox'} autofocus />
+        <input bind:value={w.name} maxlength="60" placeholder={ups ? 'UPS' : nas ? 'TrueNAS' : 'Proxmox'} autofocus />
       </label>
       <label>
-        {nas ? 'TrueNAS address' : 'Glances address'}
-        <input bind:value={w.url} placeholder={nas ? 'https://truenas.local' : 'http://192.168.1.10:61208'} inputmode="url" />
-        {#if nas}
+        {ups ? 'NUT server address' : nas ? 'TrueNAS address' : 'Glances address'}
+        <input bind:value={w.url} placeholder={ups ? 'nut://192.168.1.10' : nas ? 'https://truenas.local' : 'http://192.168.1.10:61208'} inputmode="url" />
+        {#if ups}
+          <small>The machine running <code>upsd</code>, as <code>nut://host</code> (port 3493) or <code>nut://host:port</code>. With more than one UPS add its name, <code>nut://host/myups</code>; otherwise the first one is used. Reading needs no password.</small>
+        {:else if nas}
           <small>The NAS itself, starting with https:// (for example its IP address), not an address behind a reverse proxy: a proxy that talks plain http to TrueNAS makes it revoke the key. The certificate is not checked, so a self-signed one works.</small>
         {:else}
           <small>The host must run Glances in web server mode (<code>glances -w</code>, port 61208 by default).</small>
         {/if}
       </label>
+      {#if !ups}
       <div class="two">
         <label>
           Username <small>{nas ? '(only if the login is refused)' : '(optional)'}</small>
@@ -388,14 +431,17 @@
           />
         </label>
       </div>
-      {#if saved?.hasPassword}
+      {/if}
+      {#if saved?.hasPassword && !ups}
         {#if addressChanged}
           <small>Changing the address or username removes the saved {nas ? 'API key' : 'password'}: enter it again if the host needs one.</small>
         {:else}
           <label class="check"><input type="checkbox" bind:checked={w.clearPassword} /> Remove the saved {nas ? 'API key' : 'password'}</label>
         {/if}
       {/if}
-      {#if nas}
+      {#if ups}
+        <small>The server must accept connections from the Homie machine: set <code>LISTEN 0.0.0.0 3493</code> in <code>upsd.conf</code> and allow the port in the firewall.</small>
+      {:else if nas}
         <small>Create the key in TrueNAS: user menu at the top right → My API Keys → Add API Key, linked to a user that ideally has only the Readonly Admin role. It is stored on the Homie server and never sent back to the browser.</small>
       {:else}
         <small>Glances only supports basic authentication, which is sent unencrypted over plain http. Use it on a trusted network.</small>
@@ -407,7 +453,7 @@
     </fieldset>
     {:else if tab === 'values'}
     <fieldset>
-      <small>Drag to reorder (or use the arrows). {nas ? 'Pools and drives' : 'Disks, sensors and network cards'} can be chosen once the connection has been tested.</small>
+      <small>Drag to reorder (or use the arrows). {ups ? 'Clients and other values' : nas ? 'Pools and drives' : 'Disks, sensors and network cards'} can be chosen once the connection has been tested.</small>
       <ul class="rows">
         {#each w.rows as r, i (r.id)}
           <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -461,14 +507,31 @@
                   {@render keyOptions(r, 'Hottest drive', (found?.drives ?? []).map((d) => ({ value: d.name, label: `${d.name}${d.model ? ` · ${d.model}` : ''}${d.temp !== undefined ? ` · ${Math.round(d.temp)} °C` : ''}` })))}
                 {:else if r.type === 'network'}
                   {@render keyOptions(r, 'All physical cards (total)', (found?.network ?? []).map((n) => ({ value: n.name, label: n.virtual ? `${n.name} (virtual)` : n.bridge ? `${n.name} (bridge)` : n.name })))}
+                {:else if r.type === 'voltage'}
+                  <select value={r.key === 'output' ? 'output' : 'input'} onchange={(e) => (r.key = e.currentTarget.value === 'output' ? 'output' : undefined)} aria-label="Which voltage">
+                    <option value="input">Input (mains)</option>
+                    <option value="output">Output</option>
+                  </select>
+                {:else if r.type === 'var'}
+                  {@render keyOptions(r, 'Pick a value…', Object.entries(found?.vars ?? {}).map(([k, v]) => ({ value: k, label: `${k} · ${v}` })))}
+                {:else if r.type === 'client'}
+                  <input bind:value={r.key} maxlength="100" list="clients-{r.id}" placeholder="Address, e.g. 192.168.1.20" aria-label="Address of the client" />
+                  <datalist id="clients-{r.id}">
+                    {#each found?.clients ?? [] as c (c)}<option value={c}></option>{/each}
+                  </datalist>
+                  <select bind:value={r.role} aria-label="Role of the client">
+                    <option value={undefined}>Role not set</option>
+                    <option value="primary">Primary</option>
+                    <option value="secondary">Secondary</option>
+                  </select>
                 {/if}
                 <input
                   bind:value={r.name}
                   maxlength="60"
                   placeholder={r.key || typeLabels[r.type]}
                   aria-label="Name shown for this value"
-                  disabled={(r.type === 'disk' || r.type === 'pool') && !r.key}
-                  title={(r.type === 'disk' || r.type === 'pool') && !r.key ? 'Pick one to give it a name' : ''}
+                  disabled={(r.type === 'disk' || r.type === 'pool' || r.type === 'var') && !r.key}
+                  title={(r.type === 'disk' || r.type === 'pool' || r.type === 'var') && !r.key ? 'Pick one to give it a name' : ''}
                 />
               </div>
             </div>
@@ -484,7 +547,28 @@
         }}
       >
         <option value="">+ Add a value…</option>
-        {#if nas}
+        {#if ups}
+          <option value="status">UPS status</option>
+          <option value="charge">Battery charge</option>
+          <option value="runtime">Runtime left</option>
+          <option value="upsload">UPS load</option>
+          <option value="power">Power</option>
+          <option value="voltage">Input voltage</option>
+          <option value="voltage:output">Output voltage</option>
+          <option value="model">UPS model</option>
+          <option value="clients">Connected clients (count)</option>
+          <option value="client">A client machine…</option>
+          {#if found?.clients?.length}
+            <optgroup label="Detected clients">
+              {#each found.clients as c (c)}<option value="client:{c}">{c}</option>{/each}
+            </optgroup>
+          {/if}
+          {#if found?.vars}
+            <optgroup label="Other values of the UPS">
+              {#each Object.entries(found.vars) as [k, v] (k)}<option value="var:{k}">{k} · {v}</option>{/each}
+            </optgroup>
+          {/if}
+        {:else if nas}
           <option value="pool">All pools</option>
           <option value="alerts">Alerts</option>
           <option value="apps">Apps</option>

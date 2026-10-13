@@ -64,10 +64,11 @@ The backend periodically runs an active check on each service (interval set in S
 
 ## Widgets
 
-A widget is a standalone block, separate from the groups, that shows live numbers from one of your hosts. Two kinds exist so far, each with its own setup guide:
+A widget is a standalone block, separate from the groups, that shows live numbers from one of your hosts. Three kinds exist so far, each with its own setup guide:
 
 - **Glances**: CPU, memory, swap, load, uptime, temperatures, disks and network traffic of any Linux host (a Proxmox node, for example). Guide: [docs/widgets-glances.md](docs/widgets-glances.md) (installing Glances and keeping it running).
 - **TrueNAS**: pools, alerts, apps, drive temperatures, CPU, memory, uptime. Guide: [docs/widgets-truenas.md](docs/widgets-truenas.md) (creating a read-only user and an API key, and what to avoid).
+- **UPS (NUT)**: status, battery charge, runtime, load, power, voltage and which machines are connected, each marked primary or secondary. Guide: [docs/widgets-nut.md](docs/widgets-nut.md) (letting `upsd` accept Homie, and naming the clients).
 
 Use **Edit → Add widget**, pick the type, fill in the address and press "Test connection": Homie then lists what the host offers (disks, sensors, network cards, pools, drives), so you choose from a menu instead of typing names. Each value is a row you can rename ("HDD esterno" instead of `/mnt/hdd-esterno`), reorder by dragging, or remove. A CPU row can show the load, a temperature, or both side by side (the bar follows the load, or the temperature when it is alone).
 
@@ -111,6 +112,7 @@ internal/config/        data model, validation, persistence
 internal/status/        periodic service checks
 internal/glances/       reads host metrics from the Glances API (widgets)
 internal/truenas/       reads a TrueNAS system over its JSON-RPC WebSocket API (widgets)
+internal/nut/           reads a UPS from a NUT server (widgets)
 internal/server/        HTTP API and pages
 internal/webui/         compiled interface, embedded in the binary
 ui/                     interface (Svelte 5, TypeScript, Vite)

@@ -171,8 +171,12 @@
   {/if}
   <nav class="actions">
     {#if app.editing}
-      <button type="button" onclick={() => (groupEdit = { id: null })}>Add group</button>
-      <button type="button" onclick={() => (widgetEdit = { id: null })}>Add widget</button>
+      {#if tab !== 'widgets'}
+        <button type="button" onclick={() => (groupEdit = { id: null })}>Add group</button>
+      {/if}
+      {#if tab !== 'services'}
+        <button type="button" onclick={() => (widgetEdit = { id: null })}>Add widget</button>
+      {/if}
     {/if}
     <button type="button" class:primary={app.editing} onclick={toggleEdit}>
       {app.editing ? 'Done editing' : 'Edit'}

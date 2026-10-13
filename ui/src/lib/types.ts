@@ -71,8 +71,8 @@ export interface SavedTheme {
   widgets?: Record<string, WidgetStyle>
 }
 
-export type WidgetKind = 'glances' | 'truenas'
-export type RowType = 'cpu' | 'mem' | 'swap' | 'load' | 'uptime' | 'temp' | 'disk' | 'network' | 'version' | 'pool' | 'drive' | 'alerts' | 'apps'
+export type WidgetKind = 'glances' | 'truenas' | 'nut'
+export type RowType = 'cpu' | 'mem' | 'swap' | 'load' | 'uptime' | 'temp' | 'disk' | 'network' | 'version' | 'pool' | 'drive' | 'alerts' | 'apps' | 'status' | 'charge' | 'runtime' | 'upsload' | 'power' | 'voltage' | 'model' | 'var' | 'clients' | 'client'
 
 // One line of a widget. `key` picks a disk (mount point), sensor (label),
 // network card, pool or drive (name); empty = all of them, or the CPU sensor /
@@ -85,6 +85,8 @@ export interface Row {
   // cpu rows: the load and/or a temperature, side by side.
   load?: boolean
   temp?: boolean
+  // client rows (UPS): what the user says the machine is.
+  role?: 'primary' | 'secondary'
 }
 
 export interface Widget extends WidgetStyle {
@@ -150,6 +152,12 @@ export interface HostData {
   drives?: { name: string; model?: string; pool?: string; temp?: number }[]
   alerts?: { count: number; level?: string; items?: { level: string; text: string }[] }
   apps?: { running: number; total: number; stopped?: string[] }
+  // UPS (NUT) only: the one that was read, all the ones the server has, its variables
+  // (battery.charge, ups.status, ...) and the addresses of the connected machines.
+  ups?: string
+  upsList?: string[]
+  vars?: Record<string, string>
+  clients?: string[]
 }
 
 export interface WidgetData {

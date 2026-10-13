@@ -10,6 +10,7 @@ import (
 
 	"github.com/Bagareal/homie/internal/config"
 	"github.com/Bagareal/homie/internal/glances"
+	"github.com/Bagareal/homie/internal/nut"
 	"github.com/Bagareal/homie/internal/truenas"
 )
 
@@ -19,6 +20,7 @@ import (
 type widgetCache struct {
 	glances *glances.Client
 	truenas *truenas.Client
+	nut     *nut.Client
 	mu      sync.Mutex
 	entries map[string]*widgetEntry
 }
@@ -26,17 +28,20 @@ type widgetCache struct {
 type widgetEntry struct {
 	mu     sync.Mutex // held while fetching, so concurrent callers wait for one fetch
 	key    string     // what the reading was made for; a changed widget is read again
-	result any        // glances.Result or truenas.Result: the same JSON envelope, different data
+	result any        // glances, truenas or nut Result: the same JSON envelope, different data
 	at     time.Time
 }
 
 func newWidgetCache() *widgetCache {
-	return &widgetCache{glances: glances.New(), truenas: truenas.New(), entries: map[string]*widgetEntry{}}
+	return &widgetCache{glances: glances.New(), truenas: truenas.New(), nut: nut.New(), entries: map[string]*widgetEntry{}}
 }
 
 // metricsOf lists which groups of values the rows of a widget need, so a
 // widget that only shows the CPU never asks the host for its disks.
 func metricsOf(kind string, rows []config.Row) []string {
+	if kind == "nut" {
+		return nil // a UPS is read whole, in one short conversation
+	}
 	need := map[string]bool{}
 	for _, r := range rows {
 		switch {
@@ -83,6 +88,9 @@ func metricsOf(kind string, rows []config.Row) []string {
 // fetch reads a widget's host once, whatever its kind.
 func (c *widgetCache) fetch(ctx context.Context, w config.Widget) any {
 	metrics := metricsOf(w.Kind, w.Rows)
+	if w.Kind == "nut" {
+		return c.nut.Fetch(ctx, nut.Target{URL: w.URL})
+	}
 	if w.Kind == "truenas" {
 		return c.truenas.Fetch(ctx, truenas.Target{URL: w.URL, Username: w.Username, APIKey: w.Password, Metrics: metrics})
 	}
@@ -173,6 +181,9 @@ func (s *Server) testWidget(w http.ResponseWriter, r *http.Request) {
 		if req.Kind == "truenas" {
 			msg = "enter a valid address, starting with https:// (TrueNAS revokes an API key sent over plain http)"
 		}
+		if req.Kind == "nut" {
+			msg = "enter a valid address, starting with nut:// (for example nut://192.168.1.10)"
+		}
 		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
@@ -187,6 +198,21 @@ func (s *Server) testWidget(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if req.Kind == "nut" {
+		t := nut.Target{URL: probe.URL}
+		list, err := s.widgets.nut.Ping(r.Context(), t)
+		if err != nil {
+			writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
+			return
+		}
+		res := s.widgets.nut.Fetch(r.Context(), t)
+		if !res.Online {
+			writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": res.Error})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "version": strings.Join(list, ", "), "data": res.Data})
+		return
+	}
 	if req.Kind == "truenas" {
 		t := truenas.Target{URL: probe.URL, Username: req.Username, APIKey: pw}
 		version, err := s.widgets.truenas.Ping(r.Context(), t)

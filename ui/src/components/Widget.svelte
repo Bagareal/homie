@@ -1,6 +1,6 @@
 <script lang="ts">
   import { app } from '../lib/state.svelte'
-  import { bytes, percent, rate } from '../lib/format'
+  import { bytes, duration, percent, rate } from '../lib/format'
   import type { HostData, RowType, Widget, WidgetData } from '../lib/types'
   import EditIcon from './EditIcon.svelte'
 
@@ -61,6 +61,42 @@
     drive: 'Drive',
     alerts: 'Alerts',
     apps: 'Apps',
+    status: 'Status',
+    charge: 'Battery',
+    runtime: 'Runtime',
+    upsload: 'Load',
+    power: 'Power',
+    voltage: 'Input voltage',
+    model: 'UPS',
+    var: 'Value',
+    clients: 'Clients',
+    client: 'Client',
+  }
+
+  // ups.status is a list of flags: OL OB LB CHRG DISCHRG RB ...
+  const STATUS: Record<string, string> = {
+    OL: 'Online',
+    OB: 'On battery',
+    LB: 'Low battery',
+    HB: 'High battery',
+    CHRG: 'Charging',
+    DISCHRG: 'Discharging',
+    RB: 'Replace battery',
+    OVER: 'Overloaded',
+    TRIM: 'Trimming',
+    BOOST: 'Boosting',
+    BYPASS: 'Bypass',
+    CAL: 'Calibrating',
+    OFF: 'Off',
+    ALARM: 'Alarm',
+    FSD: 'Shutting down',
+  }
+  const BAD_STATUS = ['OB', 'LB', 'RB', 'OVER', 'ALARM', 'FSD', 'OFF']
+
+  // The same address however the server or the user wrote it.
+  const sameHost = (a: string) => {
+    const v = a.trim().toLowerCase().replace(/^::ffff:/, '')
+    return v === '::1' || v === 'localhost' ? '127.0.0.1' : v
   }
 
   // A temperature has no natural 100%: the bar fills to 100 °C and warns from 80.
@@ -193,6 +229,88 @@
           const l = r.name || r.key || 'Hottest drive'
           if (pick?.temp === undefined) out.push({ key: r.id, label: l, value: 'n/a' })
           else out.push({ key: r.id, label: l, value: `${Math.round(pick.temp)} °C`, pct: pick.temp, hot: pick.temp >= 55, title: `${pick.name}${pick.model ? ` (${pick.model})` : ''}` })
+          break
+        }
+        case 'status': {
+          const raw = d.vars?.['ups.status']
+          if (raw === undefined) {
+            out.push(na())
+            break
+          }
+          const flags = raw.split(/\s+/).filter(Boolean)
+          out.push({
+            key: r.id,
+            label,
+            // Charging next to Online is the normal case: say the most important flags first.
+            value: flags.map((f) => STATUS[f] ?? f).join(' · ') || 'Unknown',
+            bad: flags.some((f) => BAD_STATUS.includes(f)),
+            title: raw,
+          })
+          break
+        }
+        case 'charge': {
+          const c = Number(d.vars?.['battery.charge'])
+          if (d.vars?.['battery.charge'] === undefined || Number.isNaN(c)) out.push(na())
+          else {
+            const bv = d.vars['battery.voltage']
+            out.push({ key: r.id, label, value: `${Math.round(c)}%`, pct: c, hot: c <= 20, title: bv ? `Battery voltage ${bv} V` : undefined })
+          }
+          break
+        }
+        case 'runtime': {
+          const s = Number(d.vars?.['battery.runtime'])
+          out.push(d.vars?.['battery.runtime'] === undefined || Number.isNaN(s) ? na() : { key: r.id, label, value: duration(s), bad: s < 300, title: 'Time left on battery at the current load' })
+          break
+        }
+        case 'upsload': {
+          const l = Number(d.vars?.['ups.load'])
+          out.push(d.vars?.['ups.load'] === undefined || Number.isNaN(l) ? na() : { key: r.id, label, value: `${Math.round(l)}%`, pct: l, hot: l >= 90 })
+          break
+        }
+        case 'power': {
+          const real = Number(d.vars?.['ups.realpower'])
+          const nominal = Number(d.vars?.['ups.realpower.nominal'])
+          const l = Number(d.vars?.['ups.load'])
+          if (d.vars?.['ups.realpower'] !== undefined && !Number.isNaN(real)) out.push({ key: r.id, label, value: `${Math.round(real)} W` })
+          else if (nominal > 0 && !Number.isNaN(l)) out.push({ key: r.id, label, value: `~${Math.round((nominal * l) / 100)} W`, title: `Estimated: ${Math.round(l)}% of ${nominal} W` })
+          else out.push(na())
+          break
+        }
+        case 'voltage': {
+          const side = r.key === 'output' ? 'output' : 'input'
+          const v = d.vars?.[`${side}.voltage`]
+          const nominal = d.vars?.[`${side}.voltage.nominal`]
+          out.push(v === undefined ? na() : { key: r.id, label: r.name || (side === 'output' ? 'Output voltage' : 'Input voltage'), value: `${Math.round(Number(v))} V`, title: nominal ? `Nominal ${nominal} V` : undefined })
+          break
+        }
+        case 'model': {
+          const v = d.vars ?? {}
+          const mfr = v['ups.mfr'] ?? v['device.mfr']
+          const text = v['ups.model'] ?? v['device.model']
+          out.push(text ? { key: r.id, label, value: text, title: [mfr, v['ups.serial'] ? `serial ${v['ups.serial']}` : ''].filter(Boolean).join(', ') } : na())
+          break
+        }
+        case 'var': {
+          const v = r.key ? d.vars?.[r.key] : undefined
+          out.push(v === undefined ? { key: r.id, label: r.name || r.key || labels.var, value: 'n/a' } : { key: r.id, label: r.name || r.key!, value: v })
+          break
+        }
+        case 'clients': {
+          const list = d.clients ?? []
+          out.push({ key: r.id, label, value: String(list.length), title: list.length ? list.join(String.fromCharCode(10)) : 'No machine is connected' })
+          break
+        }
+        case 'client': {
+          const want = sameHost(r.key ?? '')
+          const here = (d.clients ?? []).some((c) => sameHost(c) === want)
+          const role = r.role === 'primary' ? 'Primary' : r.role === 'secondary' ? 'Secondary' : ''
+          out.push({
+            key: r.id,
+            label: r.name || r.key || labels.client,
+            value: [role, here ? 'connected' : 'not connected'].filter(Boolean).join(' · '),
+            bad: !here,
+            title: r.key,
+          })
           break
         }
         case 'apps': {
