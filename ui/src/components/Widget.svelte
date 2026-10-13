@@ -674,6 +674,10 @@
     height: auto;
     min-height: 0;
   }
+  /* A collapsed widget is a label first: its title takes the accent color. */
+  .widget.folded h3 {
+    color: var(--accent);
+  }
   .fold {
     flex: none;
     display: grid;
