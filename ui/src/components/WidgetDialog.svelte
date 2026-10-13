@@ -608,7 +608,7 @@
             <label>
               Glances address
               <input bind:value={w.glances.url} placeholder="http://192.168.1.10:61208" inputmode="url" />
-              <small>{pve ? 'The node you are connected to, or leave empty and give one per node below.' : 'The machine itself, running Glances in web server mode (glances -w).'}</small>
+              <small>{pve && nodeNames.length > 1 ? 'The node you are connected to, or leave empty and give one per node below.' : 'The machine itself, running Glances in web server mode (glances -w, port 61208). Then press Test connection: the result is shown under these fields.'}</small>
             </label>
             <div class="two">
               <label>
@@ -623,7 +623,7 @@
             {#if saved?.glances?.hasPassword}
               <label class="check"><input type="checkbox" bind:checked={w.glances.clearPassword} /> Remove the saved Glances password</label>
             {/if}
-            {#if pve && nodeNames.length > 0}
+            {#if pve && nodeNames.length > 1}
               <small>A cluster has one Glances per node: give each node's address (the same login is used for all of them). Leave a node empty to skip it.</small>
               {#each nodeNames as n (n)}
                 <label class="node">
@@ -631,8 +631,8 @@
                   <input value={w.glances.nodes?.[n] ?? ''} oninput={(e) => setNodeUrl(n, e.currentTarget.value)} placeholder="http://… (optional)" inputmode="url" />
                 </label>
               {/each}
-            {:else if pve}
-              <small>For a cluster: test the connection first, then each node's Glances address can be entered here.</small>
+            {:else if pve && !found}
+              <small>With a cluster, test the connection first: each node's Glances address can then be entered here.</small>
             {/if}
             <small>Glances only supports basic authentication, which is sent unencrypted over plain http. Use it on a trusted network.</small>
             {#if foundExtra}
