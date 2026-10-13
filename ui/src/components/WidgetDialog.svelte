@@ -10,7 +10,7 @@
   import ColorField from './ColorField.svelte'
   import Slider from './Slider.svelte'
   import AddressInput from './AddressInput.svelte'
-  import { splitAddress, withDefaultPort } from '../lib/address'
+  import { withDefaultPort } from '../lib/address'
   import WidgetView from './Widget.svelte'
 
   let { widgetId, onclose }: { widgetId: string | null; onclose: () => void } = $props()
@@ -180,29 +180,11 @@
   const DEFAULT_PORT: Record<WidgetKind, string> = { glances: '61208', proxmox: '8006', truenas: '', nut: '3493' }
   const defaultPort = $derived(DEFAULT_PORT[w.kind])
 
-  // An address saved without a port keeps working without one (a name behind a reverse
-  // proxy answers on 443, not on the program's own port): only a new address, or
-  // another host, gets the default port.
-  const bareHost = (u: string) => splitAddress(u).host.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').replace(/\/.*$/, '').toLowerCase()
-  function defaultFor(current: string, savedUrl: string | undefined, def: string): string {
-    if (savedUrl && !splitAddress(savedUrl).port && bareHost(savedUrl) === bareHost(current)) return ''
-    return def
-  }
-  // What an empty Port field means for this address, shown in grey.
-  function portHint(current: string, savedUrl: string | undefined, def: string, scheme: string): string {
-    const d = defaultFor(current, savedUrl, def)
-    if (d) return d
-    const typed = /^([a-z][a-z0-9+.-]*):\/\//i.exec((current ?? '').trim())?.[1] ?? /^([a-z][a-z0-9+.-]*):\/\//i.exec(savedUrl ?? '')?.[1] ?? scheme
-    const s = typed.toLowerCase()
-    return s === 'https' ? '443' : s === 'nut' ? '3493' : '80'
-  }
-
   function normalizeUrl(raw: string): string {
     const v = raw.trim()
     const full = v && !/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? `${w.kind === 'truenas' || w.kind === 'proxmox' ? 'https' : w.kind === 'nut' ? 'nut' : 'http'}://${v}` : v
     // Proxmox VE only speaks https: a typed http:// would just be redirected.
-    const url = w.kind === 'proxmox' ? full.replace(/^http:\/\//i, 'https://') : full
-    return withDefaultPort(url, defaultFor(url, saved?.url, DEFAULT_PORT[w.kind]))
+    return withDefaultPort(w.kind === 'proxmox' ? full.replace(/^http:\/\//i, 'https://') : full, DEFAULT_PORT[w.kind])
   }
 
   // What the editor previews until the host has been read.
@@ -310,7 +292,7 @@
   const glancesPayload = () => {
     const g = w.glances
     return g
-      ? { url: normalizeHttp(g.url, saved?.glances?.url), username: (g.username ?? '').trim(), password: g.password ?? '', nodes: Object.fromEntries(Object.entries(extraNodes).map(([n, u]) => [n, normalizeHttp(u, saved?.glances?.nodes?.[n])])) }
+      ? { url: normalizeHttp(g.url), username: (g.username ?? '').trim(), password: g.password ?? '', nodes: Object.fromEntries(Object.entries(extraNodes).map(([n, u]) => [n, normalizeHttp(u)])) }
       : undefined
   }
 
@@ -354,7 +336,7 @@
         username: (w.username ?? '').trim(),
         password: w.password ?? '',
         glances: both ? glancesPayload() : undefined,
-        nut: both && w.nut?.url.trim() ? { url: normalizeNut(w.nut.url, saved?.nut?.url) } : undefined,
+        nut: both && w.nut?.url.trim() ? { url: normalizeNut(w.nut.url) } : undefined,
       })
       if (both) {
         foundExtra = r.extra ?? null
@@ -386,10 +368,9 @@
 
   // ---- the extra UPS source
 
-  const normalizeNut = (raw: string, savedUrl?: string) => {
+  const normalizeNut = (raw: string) => {
     const v = (raw ?? '').trim()
-    const full = v && !/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? `nut://${v}` : v
-    return withDefaultPort(full, defaultFor(full, savedUrl, '3493'))
+    return withDefaultPort(v && !/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? `nut://${v}` : v, '3493')
   }
 
   async function toggleNut(on: boolean) {
@@ -418,7 +399,7 @@
   async function testNut() {
     foundNut = null
     nutError = ''
-    const url = normalizeNut(w.nut?.url ?? '', saved?.nut?.url)
+    const url = normalizeNut(w.nut?.url ?? '')
     if (!url) {
       nutError = 'Enter the UPS address first.'
       return
@@ -436,10 +417,9 @@
 
   // ---- the extra Glances source
 
-  function normalizeHttp(raw: string, savedUrl?: string): string {
+  function normalizeHttp(raw: string): string {
     const v = (raw ?? '').trim()
-    const full = v && !/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? `http://${v}` : v
-    return withDefaultPort(full, defaultFor(full, savedUrl, '61208'))
+    return withDefaultPort(v && !/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? `http://${v}` : v, '61208')
   }
 
   async function toggleExtra(on: boolean) {
@@ -557,8 +537,8 @@
     let glances: Widget['glances']
     if (w.glances) {
       const g = $state.snapshot(w.glances)
-      const nodes = Object.fromEntries(Object.entries(g.nodes ?? {}).filter(([, u]) => u.trim()).map(([n, u]) => [n, normalizeHttp(u, saved?.glances?.nodes?.[n])]))
-      const gurl = normalizeHttp(g.url, saved?.glances?.url)
+      const nodes = Object.fromEntries(Object.entries(g.nodes ?? {}).filter(([, u]) => u.trim()).map(([n, u]) => [n, normalizeHttp(u)]))
+      const gurl = normalizeHttp(g.url)
       for (const raw of [gurl, ...Object.values(nodes)]) {
         try {
           if (raw && !['http:', 'https:'].includes(new URL(raw).protocol)) throw new Error()
@@ -570,7 +550,7 @@
     }
     let nut: Widget['nut']
     if (w.nut && w.nut.url.trim()) {
-      const nurl = normalizeNut(w.nut.url, saved?.nut?.url)
+      const nurl = normalizeNut(w.nut.url)
       try {
         if (new URL(nurl).protocol !== 'nut:') throw new Error()
       } catch {
@@ -691,7 +671,7 @@
       </label>
       <label>
         {ups ? 'NUT server address' : nas ? 'TrueNAS address' : pve ? 'Proxmox VE address' : 'Glances address'}
-        <AddressInput bind:value={w.url} placeholder={ups ? 'nut://192.168.1.10' : nas ? 'https://truenas.local' : pve ? 'https://192.168.1.10' : 'http://192.168.1.10'} port={portHint(w.url, saved?.url, defaultPort, ups ? 'nut' : nas || pve ? 'https' : 'http')} />
+        <AddressInput bind:value={w.url} placeholder={ups ? 'nut://192.168.1.10' : nas ? 'https://truenas.local' : pve ? 'https://192.168.1.10' : 'http://192.168.1.10'} port={defaultPort || '443'} />
         {#if pve}
           <small>Any node of the cluster (or the single node), port 8006: it answers for the whole cluster. The certificate is not checked, so Proxmox's own self-signed one works.</small>
         {:else if ups}
@@ -749,7 +729,7 @@
           {#if w.glances}
             <label>
               Glances address
-              <AddressInput bind:value={w.glances.url} placeholder="http://192.168.1.10" port={portHint(w.glances.url, saved?.glances?.url, '61208', 'http')} />
+              <AddressInput bind:value={w.glances.url} placeholder="http://192.168.1.10" port="61208" />
               <small>{pve && nodeNames.length > 1 ? 'The node you are connected to, or leave empty and give one per node below.' : 'The machine itself, running Glances in web server mode (glances -w, port 61208). Then press Test connection: the result is shown under these fields.'}</small>
             </label>
             <div class="two">
@@ -803,7 +783,7 @@
           {#if w.nut}
             <label>
               NUT server address
-              <AddressInput bind:value={w.nut.url} placeholder="nut://192.168.1.10" port={portHint(w.nut.url, saved?.nut?.url, '3493', 'nut')} />
+              <AddressInput bind:value={w.nut.url} placeholder="nut://192.168.1.10" port="3493" />
               <small>The machine running <code>upsd</code>, as <code>nut://host</code> (port 3493) or <code>nut://host:port</code>; add the UPS name, <code>nut://host/myups</code>, if it has several. Reading needs no password. Press Test UPS: the result is shown under it.</small>
             </label>
             <div class="test">
