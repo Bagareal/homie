@@ -40,7 +40,7 @@ Values you can show:
 
 ### Which address to enter
 
-`https://192.168.1.10:8006`: the scheme is **https**, the port is **8006** (without a port Homie would try 443), and the host can be an IP or a name. If you normally open Proxmox through a reverse proxy by name, that name points to the proxy and the widget will usually only work through it on 443; the node's own IP with `:8006` is the most reliable. The rules for every widget are collected in [widgets-glances.md](widgets-glances.md#which-address-to-enter).
+In the editor, enter `https://192.168.1.10` and leave **Port** empty: the default 8006 is used (type another number there if you changed it). The stored address is then `https://192.168.1.10:8006`. The scheme is **https** and the host can be an IP or a name. If you normally open Proxmox through a reverse proxy by name, that name points to the proxy and the widget will usually only work through it on 443; the node's own IP with `:8006` is the most reliable. The rules for every widget are collected in [widgets-glances.md](widgets-glances.md#which-address-to-enter).
 
 ## Temperatures, disks and network (Glances)
 

@@ -9,6 +9,8 @@
   import type { HostData, Row, RowType, Widget, WidgetData, WidgetKind } from '../lib/types'
   import ColorField from './ColorField.svelte'
   import Slider from './Slider.svelte'
+  import AddressInput from './AddressInput.svelte'
+  import { withDefaultPort } from '../lib/address'
   import WidgetView from './Widget.svelte'
 
   let { widgetId, onclose }: { widgetId: string | null; onclose: () => void } = $props()
@@ -171,9 +173,14 @@
   const addressChanged = $derived(!!saved?.hasPassword && (normalizeUrl(w.url) !== saved.url || (w.username ?? '').trim() !== (saved.username ?? '')))
 
   // TrueNAS is only ever reached over https (it revokes API keys sent without TLS).
+  // The port each program listens on, used when the address has none (TrueNAS: 443, from https).
+  const DEFAULT_PORT: Record<WidgetKind, string> = { glances: '61208', proxmox: '8006', truenas: '', nut: '3493' }
+  const defaultPort = $derived(DEFAULT_PORT[w.kind])
+
   function normalizeUrl(raw: string): string {
     const v = raw.trim()
-    return v && !/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? `${w.kind === 'truenas' || w.kind === 'proxmox' ? 'https' : w.kind === 'nut' ? 'nut' : 'http'}://${v}` : v
+    const full = v && !/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? `${w.kind === 'truenas' || w.kind === 'proxmox' ? 'https' : w.kind === 'nut' ? 'nut' : 'http'}://${v}` : v
+    return withDefaultPort(full, DEFAULT_PORT[w.kind])
   }
 
   // What the editor previews until the host has been read.
@@ -359,7 +366,7 @@
 
   const normalizeNut = (raw: string) => {
     const v = (raw ?? '').trim()
-    return v && !/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? `nut://${v}` : v
+    return withDefaultPort(v && !/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? `nut://${v}` : v, '3493')
   }
 
   async function toggleNut(on: boolean) {
@@ -408,7 +415,7 @@
 
   function normalizeHttp(raw: string): string {
     const v = (raw ?? '').trim()
-    return v && !/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? `http://${v}` : v
+    return withDefaultPort(v && !/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? `http://${v}` : v, '61208')
   }
 
   async function toggleExtra(on: boolean) {
@@ -659,7 +666,7 @@
       </label>
       <label>
         {ups ? 'NUT server address' : nas ? 'TrueNAS address' : pve ? 'Proxmox VE address' : 'Glances address'}
-        <input bind:value={w.url} placeholder={ups ? 'nut://192.168.1.10' : nas ? 'https://truenas.local' : pve ? 'https://192.168.1.10:8006' : 'http://192.168.1.10:61208'} inputmode="url" />
+        <AddressInput bind:value={w.url} placeholder={ups ? 'nut://192.168.1.10' : nas ? 'https://truenas.local' : pve ? 'https://192.168.1.10' : 'http://192.168.1.10'} port={defaultPort || '443'} />
         {#if pve}
           <small>Any node of the cluster (or the single node), port 8006: it answers for the whole cluster. The certificate is not checked, so Proxmox's own self-signed one works.</small>
         {:else if ups}
@@ -717,7 +724,7 @@
           {#if w.glances}
             <label>
               Glances address
-              <input bind:value={w.glances.url} placeholder="http://192.168.1.10:61208" inputmode="url" />
+              <AddressInput bind:value={w.glances.url} placeholder="http://192.168.1.10" port="61208" />
               <small>{pve && nodeNames.length > 1 ? 'The node you are connected to, or leave empty and give one per node below.' : 'The machine itself, running Glances in web server mode (glances -w, port 61208). Then press Test connection: the result is shown under these fields.'}</small>
             </label>
             <div class="two">
@@ -771,7 +778,7 @@
           {#if w.nut}
             <label>
               NUT server address
-              <input bind:value={w.nut.url} placeholder="nut://192.168.1.10" inputmode="url" />
+              <AddressInput bind:value={w.nut.url} placeholder="nut://192.168.1.10" port="3493" />
               <small>The machine running <code>upsd</code>, as <code>nut://host</code> (port 3493) or <code>nut://host:port</code>; add the UPS name, <code>nut://host/myups</code>, if it has several. Reading needs no password. Press Test UPS: the result is shown under it.</small>
             </label>
             <div class="test">
