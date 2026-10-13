@@ -71,8 +71,8 @@ export interface SavedTheme {
   widgets?: Record<string, WidgetStyle>
 }
 
-export type WidgetKind = 'glances' | 'truenas' | 'nut'
-export type RowType = 'cpu' | 'mem' | 'swap' | 'load' | 'uptime' | 'temp' | 'disk' | 'network' | 'version' | 'pool' | 'drive' | 'alerts' | 'apps' | 'status' | 'charge' | 'runtime' | 'upsload' | 'power' | 'voltage' | 'model' | 'var' | 'clients' | 'client'
+export type WidgetKind = 'glances' | 'truenas' | 'nut' | 'proxmox'
+export type RowType = 'cpu' | 'mem' | 'swap' | 'load' | 'uptime' | 'temp' | 'disk' | 'network' | 'version' | 'pool' | 'drive' | 'alerts' | 'apps' | 'status' | 'charge' | 'runtime' | 'upsload' | 'power' | 'voltage' | 'model' | 'var' | 'clients' | 'client' | 'nodes' | 'lxc' | 'vm' | 'guest' | 'storage' | 'backup' | 'quorum' | 'tasks'
 
 // One line of a widget. `key` picks a disk (mount point), sensor (label),
 // network card, pool or drive (name); empty = all of them, or the CPU sensor /
@@ -87,6 +87,21 @@ export interface Row {
   temp?: boolean
   // client rows (UPS): what the user says the machine is.
   role?: 'primary' | 'secondary'
+  // Where the value comes from: the widget's own source, or its extra Glances source
+  // (of a Proxmox cluster, `node` says which node's Glances).
+  source?: 'glances'
+  node?: string
+}
+
+// An extra source of a widget (Glances). Like the main one, its password is write-only.
+export interface Extra {
+  url: string
+  username?: string
+  password?: string
+  hasPassword?: boolean
+  clearPassword?: boolean
+  // Proxmox cluster: a Glances address per node.
+  nodes?: Record<string, string>
 }
 
 export interface Widget extends WidgetStyle {
@@ -99,6 +114,7 @@ export interface Widget extends WidgetStyle {
   password?: string
   hasPassword?: boolean
   clearPassword?: boolean
+  glances?: Extra
   rows: Row[]
   refresh: number
   // Size in groups: cols wide, heightUnits high; or, with precise, height in px (0 = fit the content).
@@ -158,6 +174,29 @@ export interface HostData {
   upsList?: string[]
   vars?: Record<string, string>
   clients?: string[]
+  // Proxmox VE only.
+  cluster?: { name: string; quorate: boolean; nodes: number; online: number }
+  nodes?: { name: string; online: boolean; cpu?: number; cores?: number; mem?: Usage; uptime?: string }[]
+  guests?: {
+    id: number
+    name: string
+    type: 'lxc' | 'qemu'
+    node: string
+    status: string
+    cpu: number
+    cores?: number
+    mem: Usage
+    uptime?: string
+    template?: boolean
+    tags?: string[]
+    pool?: string
+  }[]
+  storage?: { id: string; node: string; type?: string; shared?: boolean; status?: string; percent: number; used: number; total: number }[]
+  backup?: { status: 'ok' | 'warnings' | 'failed' | 'running'; end?: string; node?: string; message?: string }
+  tasks?: { failed: number; items?: { type: string; node: string; status: string; end: string }[] }
+  // The extra Glances source of the widget: the general one and one per node.
+  glances?: HostData
+  glancesNodes?: Record<string, HostData>
 }
 
 export interface WidgetData {

@@ -71,6 +71,13 @@ class AppState {
       else if (w.clearPassword) w.hasPassword = false
       w.password = ''
       w.clearPassword = false
+      const g = w.glances
+      if (g) {
+        if (g.password) g.hasPassword = true
+        else if (g.clearPassword) g.hasPassword = false
+        g.password = ''
+        g.clearPassword = false
+      }
     }
   }
 

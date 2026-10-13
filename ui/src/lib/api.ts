@@ -26,8 +26,23 @@ export const getStatus = () => request<Record<string, Status>>('api/status')
 
 export const getWidgets = () => request<Record<string, WidgetData>>('api/widgets')
 
-export const testWidget = (w: { id?: string; kind: string; url: string; username: string; password: string }) =>
-  request<{ ok: boolean; version?: string; error?: string; data?: HostData }>('api/widgets/test', {
+export interface ProbeResult {
+  ok: boolean
+  version?: string
+  error?: string
+  data?: HostData
+}
+
+export const testWidget = (w: {
+  id?: string
+  kind: string
+  url: string
+  username: string
+  password: string
+  // The extra Glances source, tested along with the main one.
+  glances?: { url: string; username: string; password: string; nodes?: Record<string, string> }
+}) =>
+  request<ProbeResult & { extra?: { glances?: ProbeResult; nodes?: Record<string, ProbeResult> } }>('api/widgets/test', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(w),

@@ -22,4 +22,16 @@ export function duration(sec: number): string {
   return s % 60 === 0 || m >= 10 ? `${m} min` : `${m} min ${s % 60} s`
 }
 
+// "2026-10-13T09:00:00Z" -> "3 h ago".
+export function ago(iso: string | undefined, now = Date.now()): string {
+  const t = iso ? Date.parse(iso) : NaN
+  if (Number.isNaN(t) || t <= 0) return ''
+  const s = Math.max(0, Math.round((now - t) / 1000))
+  if (s < 90) return 'just now'
+  if (s < 3600) return `${Math.round(s / 60)} min ago`
+  if (s < 86400) return `${Math.round(s / 3600)} h ago`
+  const d = Math.round(s / 86400)
+  return d === 1 ? 'yesterday' : `${d} days ago`
+}
+
 export const percent = (n: number) => `${n >= 100 ? 100 : n.toFixed(n < 10 ? 1 : 0)}%`

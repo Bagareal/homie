@@ -40,10 +40,26 @@
     var: 'Other value',
     clients: 'Connected clients',
     client: 'Client',
+    nodes: 'Nodes',
+    lxc: 'LXC containers',
+    vm: 'Virtual machines',
+    guest: 'A container or VM',
+    storage: 'Storage',
+    backup: 'Last backup',
+    quorum: 'Cluster quorum',
+    tasks: 'Failed tasks',
   }
 
   const defaultRows = (kind: WidgetKind): Row[] =>
-    kind === 'nut'
+    kind === 'proxmox'
+      ? [
+          { id: uid(), type: 'cpu', load: true },
+          { id: uid() + 'm', type: 'mem' },
+          { id: uid() + 'l', type: 'lxc' },
+          { id: uid() + 'v', type: 'vm' },
+          { id: uid() + 's', type: 'storage' },
+        ]
+      : kind === 'nut'
       ? [
           { id: uid(), type: 'status' },
           { id: uid() + 'c', type: 'charge' },
@@ -86,6 +102,8 @@
   // What the host reported at the last successful test: used to pick disks,
   // sensors and network cards, and to preview the widget with real values.
   let found = $state<HostData | null>(null)
+  // What the extra Glances source reported at the last test: the general address and each node's.
+  let foundExtra = $state<{ glances?: api.ProbeResult; nodes?: Record<string, api.ProbeResult> } | null>(null)
 
   type Tab = 'source' | 'values' | 'size' | 'look'
   const tabs: [Tab, string][] = [
@@ -129,6 +147,8 @@
 
   const nas = $derived(w.kind === 'truenas')
   const ups = $derived(w.kind === 'nut')
+  const pve = $derived(w.kind === 'proxmox')
+  const secretName = $derived(nas ? 'API key' : pve ? 'token secret' : 'password')
   // Ticked: on save, this widget's look becomes the look of every widget.
   let shareLook = $state(false)
   const global = $derived(app.config!.settings)
@@ -139,7 +159,9 @@
     w.kind = kind
     w.rows = defaultRows(kind)
     w.password = ''
+    w.glances = undefined
     found = null
+    foundExtra = null
     testResult = null
   }
   const addressChanged = $derived(!!saved?.hasPassword && (normalizeUrl(w.url) !== saved.url || (w.username ?? '').trim() !== (saved.username ?? '')))
@@ -147,7 +169,7 @@
   // TrueNAS is only ever reached over https (it revokes API keys sent without TLS).
   function normalizeUrl(raw: string): string {
     const v = raw.trim()
-    return v && !/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? `${w.kind === 'truenas' ? 'https' : w.kind === 'nut' ? 'nut' : 'http'}://${v}` : v
+    return v && !/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? `${w.kind === 'truenas' || w.kind === 'proxmox' ? 'https' : w.kind === 'nut' ? 'nut' : 'http'}://${v}` : v
   }
 
   // What the editor previews until the host has been read.
@@ -208,12 +230,48 @@
       clients: ['127.0.0.1', '192.168.1.20'],
     },
   }
-  const sample = $derived(ups ? sampleUPS : nas ? sampleNAS : sampleGlances)
+  const samplePVE: WidgetData = {
+    online: true,
+    updatedAt: '',
+    data: {
+      version: '8.2.4',
+      cpu: 12,
+      mem: { percent: 48, used: 15 * 2 ** 30, total: 32 * 2 ** 30 },
+      nodes: [{ name: 'pve', online: true, cpu: 12, cores: 8, mem: { percent: 48, used: 15 * 2 ** 30, total: 32 * 2 ** 30 }, uptime: '12 days, 3:45:10' }],
+      guests: [
+        { id: 100, name: 'web', type: 'lxc', node: 'pve', status: 'running', cpu: 2, mem: { percent: 20, used: 100 * 2 ** 20, total: 512 * 2 ** 20 } },
+        { id: 101, name: 'db', type: 'lxc', node: 'pve', status: 'stopped', cpu: 0, mem: { percent: 0, used: 0, total: 2 ** 30 } },
+        { id: 200, name: 'nas', type: 'qemu', node: 'pve', status: 'running', cpu: 8, mem: { percent: 60, used: 2.4 * 2 ** 30, total: 4 * 2 ** 30 } },
+      ],
+      storage: [
+        { id: 'local', node: 'pve', status: 'available', percent: 39, used: 39 * 2 ** 30, total: 100 * 2 ** 30 },
+        { id: 'local-lvm', node: 'pve', status: 'available', percent: 62, used: 620 * 2 ** 30, total: 1000 * 2 ** 30 },
+      ],
+      backup: { status: 'ok', end: new Date(Date.now() - 5 * 3600 * 1000).toISOString(), node: 'pve' },
+      tasks: { failed: 0 },
+      glances: { temp: { label: 'Package id 0', value: 48 }, sensors: [{ label: 'Package id 0', value: 48 }] },
+    },
+  }
+  const sample = $derived(pve ? samplePVE : ups ? sampleUPS : nas ? sampleNAS : sampleGlances)
   const live = $derived(widgetId ? app.widgetData[widgetId] : undefined)
   const previewData = $derived<WidgetData>(
-    found ? { online: true, updatedAt: '', data: found } : live?.online && !addressChanged ? live : sample,
+    found
+      ? {
+          online: true,
+          updatedAt: '',
+          // What the extra Glances source reported, so its rows preview with real values too.
+          data: {
+            ...found,
+            glances: foundExtra?.glances?.data,
+            glancesNodes: Object.fromEntries(Object.entries(foundExtra?.nodes ?? {}).filter(([, p]) => p.data).map(([n, p]) => [n, p.data!])),
+          },
+        }
+      : live?.online && !addressChanged ? live : sample,
   )
   const previewIsSample = $derived(previewData === sample)
+
+  // Where each node's Glances is, as typed so far.
+  const extraNodes = $derived(Object.fromEntries(Object.entries(w.glances?.nodes ?? {}).filter(([, u]) => u.trim())))
 
   async function test(silent = false) {
     error = ''
@@ -222,10 +280,19 @@
     if (!url) return void (silent || (testResult = { ok: false, text: 'Enter the address first.' }))
     testing = true
     try {
-      const r = await api.testWidget({ id: widgetId ?? undefined, kind: w.kind, url, username: (w.username ?? '').trim(), password: w.password ?? '' })
+      const g = w.glances
+      const r = await api.testWidget({
+        id: widgetId ?? undefined,
+        kind: w.kind,
+        url,
+        username: (w.username ?? '').trim(),
+        password: w.password ?? '',
+        glances: g ? { url: normalizeHttp(g.url), username: (g.username ?? '').trim(), password: g.password ?? '', nodes: Object.fromEntries(Object.entries(extraNodes).map(([n, u]) => [n, normalizeHttp(u)])) } : undefined,
+      })
+      foundExtra = r.extra ?? null
       if (r.ok) {
         found = r.data ?? null
-        testResult = { ok: true, text: `Connected${r.version ? ` (${ups ? 'UPS: ' : nas ? '' : 'Glances '}${r.version})` : ''}` }
+        testResult = { ok: true, text: `Connected${r.version ? ` (${ups ? 'UPS: ' : nas || pve ? '' : 'Glances '}${r.version})` : ''}` }
       } else if (!silent) testResult = { ok: false, text: r.error ?? 'Failed' }
     } catch (e) {
       if (!silent) testResult = { ok: false, text: (e as Error).message }
@@ -247,6 +314,57 @@
     else if (choice === 'save') form.requestSubmit()
   }
 
+  // ---- the extra Glances source
+
+  function normalizeHttp(raw: string): string {
+    const v = (raw ?? '').trim()
+    return v && !/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? `http://${v}` : v
+  }
+
+  async function toggleExtra(on: boolean) {
+    if (on) {
+      w.glances = { url: '', username: '', password: '', nodes: {} }
+      return
+    }
+    const mine = w.rows.filter((r) => r.source === 'glances').length
+    if (mine > 0) {
+      const ok = await app.confirm({
+        title: 'Turn off Glances',
+        message: `This also removes the ${mine} value${mine === 1 ? '' : 's'} read from Glances.`,
+        confirmLabel: 'Turn off',
+        danger: true,
+      })
+      if (!ok) return
+    }
+    w.rows = w.rows.filter((r) => r.source !== 'glances')
+    w.glances = undefined
+    foundExtra = null
+  }
+
+  function setNodeUrl(node: string, url: string) {
+    if (!w.glances) return
+    w.glances.nodes = { ...(w.glances.nodes ?? {}), [node]: url }
+  }
+
+  // The nodes of a cluster: the ones found, plus any that already have an address.
+  const nodeNames = $derived([...new Set([...(found?.nodes ?? []).map((n) => n.name), ...Object.keys(w.glances?.nodes ?? {})])].sort())
+  const poolNames = $derived([...new Set((found?.guests ?? []).map((g) => g.pool).filter((p): p is string => !!p))].sort())
+  const tagNames = $derived([...new Set((found?.guests ?? []).flatMap((g) => g.tags ?? []))].sort())
+  const storeIds = $derived([...new Set((found?.storage ?? []).map((s) => s.id))])
+
+  // What a row can pick from: the main source's data, or the extra Glances source's.
+  function srcData(r: Row): HostData | null | undefined {
+    if (r.source !== 'glances') return found
+    return r.node ? foundExtra?.nodes?.[r.node]?.data : foundExtra?.glances?.data
+  }
+  // One entry per Glances server that answered: the general one and each node's.
+  const glancesTargets = $derived.by(() => {
+    const out: { node: string; label: string; data: HostData }[] = []
+    if (foundExtra?.glances?.data) out.push({ node: '', label: 'Glances', data: foundExtra.glances.data })
+    for (const [node, p] of Object.entries(foundExtra?.nodes ?? {})) if (p.data) out.push({ node, label: `Glances · ${node}`, data: p.data })
+    return out
+  })
+
   // ---- rows
 
   const diskLabel = (d: { mount: string; used: number; total: number }) => `${d.mount} · ${bytes(d.used)} of ${bytes(d.total)}`
@@ -255,9 +373,20 @@
   // The "add" menu's values are "type" or "type:key".
   function addRow(value: string) {
     if (!value) return
+    let source: Row['source']
+    let node: string | undefined
+    if (value.startsWith('glances')) {
+      const slash = value.indexOf('/')
+      const head = value.slice(0, slash)
+      source = 'glances'
+      node = head.startsWith('glances@') ? head.slice('glances@'.length) : undefined
+      value = value.slice(slash + 1)
+    }
     const at = value.indexOf(':')
     const type = (at < 0 ? value : value.slice(0, at)) as RowType
     const row: Row = { id: uid(), type }
+    if (source) row.source = source
+    if (node) row.node = node
     if (type === 'cpu') row.load = true
     if (at >= 0) row.key = value.slice(at + 1)
     w.rows.push(row)
@@ -291,21 +420,39 @@
     try {
       const u = new URL(url)
       if (ups ? u.protocol !== 'nut:' : u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error()
+      if (pve && !(w.username ?? '').includes('@')) return fail('source', 'The API token ID looks like user@realm!name, for example root@pam!homie.')
+      if (pve && !(w.username ?? '').includes('!')) return fail('source', 'The API token ID looks like user@realm!name, for example root@pam!homie.')
       if (nas && u.protocol !== 'https:') return fail('source', 'A TrueNAS address must start with https:// (TrueNAS revokes an API key sent over plain http).')
     } catch {
       return fail('source', `Enter a valid address, for example ${ups ? 'nut://192.168.1.10' : nas ? 'https://truenas.local' : 'http://192.168.1.10:61208'}.`)
     }
     if (w.rows.length === 0) return fail('values', 'Add at least one value to show.')
     if (w.rows.some((r) => r.type === 'client' && !(r.key ?? '').trim())) return fail('values', 'A client needs its address (the connected ones are listed once the connection is tested).')
+    // The extra source: addresses tidied up; with nothing to read it is simply off.
+    let glances: Widget['glances']
+    if (w.glances) {
+      const g = $state.snapshot(w.glances)
+      const nodes = Object.fromEntries(Object.entries(g.nodes ?? {}).filter(([, u]) => u.trim()).map(([n, u]) => [n, normalizeHttp(u)]))
+      const gurl = normalizeHttp(g.url)
+      for (const raw of [gurl, ...Object.values(nodes)]) {
+        try {
+          if (raw && !['http:', 'https:'].includes(new URL(raw).protocol)) throw new Error()
+        } catch {
+          return fail('source', `The Glances address “${raw}” is not valid, for example http://192.168.1.10:61208.`)
+        }
+      }
+      if (gurl || Object.keys(nodes).length) glances = { ...g, url: gurl, username: (g.username ?? '').trim(), nodes }
+    }
     const out: Widget = {
       ...$state.snapshot(w),
+      glances,
       id: saved?.id ?? uid(),
       name: w.name.trim(),
       url,
       username: (w.username ?? '').trim(),
       // Changing the address or username drops the stored password on the server.
       clearPassword: !!w.clearPassword || (addressChanged && !w.password),
-      rows: w.rows.map((r) => ({ ...$state.snapshot(r), name: (r.name ?? '').trim() })),
+      rows: w.rows.filter((r) => r.source !== 'glances' || glances).map((r) => ({ ...$state.snapshot(r), name: (r.name ?? '').trim() })),
     }
     if (shareLook) {
       // Its own settings move to Settings → Widgets; the widget then simply follows them.
@@ -392,7 +539,8 @@
         <label>
           Type
           <select value={w.kind} onchange={(e) => setKind(e.currentTarget.value as WidgetKind)}>
-            <option value="glances">Glances (any Linux host, e.g. Proxmox)</option>
+            <option value="proxmox">Proxmox VE (a node or a cluster)</option>
+            <option value="glances">Glances (any Linux host)</option>
             <option value="truenas">TrueNAS (25.04 or later)</option>
             <option value="nut">UPS (NUT server)</option>
           </select>
@@ -401,12 +549,14 @@
       <label>
         Name
         <!-- svelte-ignore a11y_autofocus -->
-        <input bind:value={w.name} maxlength="60" placeholder={ups ? 'UPS' : nas ? 'TrueNAS' : 'Proxmox'} autofocus />
+        <input bind:value={w.name} maxlength="60" placeholder={ups ? 'UPS' : nas ? 'TrueNAS' : pve ? 'Proxmox' : 'Server'} autofocus />
       </label>
       <label>
-        {ups ? 'NUT server address' : nas ? 'TrueNAS address' : 'Glances address'}
-        <input bind:value={w.url} placeholder={ups ? 'nut://192.168.1.10' : nas ? 'https://truenas.local' : 'http://192.168.1.10:61208'} inputmode="url" />
-        {#if ups}
+        {ups ? 'NUT server address' : nas ? 'TrueNAS address' : pve ? 'Proxmox VE address' : 'Glances address'}
+        <input bind:value={w.url} placeholder={ups ? 'nut://192.168.1.10' : nas ? 'https://truenas.local' : pve ? 'https://192.168.1.10:8006' : 'http://192.168.1.10:61208'} inputmode="url" />
+        {#if pve}
+          <small>Any node of the cluster (or the single node), port 8006: it answers for the whole cluster. The certificate is not checked, so Proxmox's own self-signed one works.</small>
+        {:else if ups}
           <small>The machine running <code>upsd</code>, as <code>nut://host</code> (port 3493) or <code>nut://host:port</code>. With more than one UPS add its name, <code>nut://host/myups</code>; otherwise the first one is used. Reading needs no password.</small>
         {:else if nas}
           <small>The NAS itself, starting with https:// (for example its IP address), not an address behind a reverse proxy: a proxy that talks plain http to TrueNAS makes it revoke the key. The certificate is not checked, so a self-signed one works.</small>
@@ -417,11 +567,11 @@
       {#if !ups}
       <div class="two">
         <label>
-          Username <small>{nas ? '(only if the login is refused)' : '(optional)'}</small>
-          <input bind:value={w.username} maxlength="100" autocomplete="off" />
+          {pve ? 'API token ID' : 'Username'} <small>{pve ? '' : nas ? '(only if the login is refused)' : '(optional)'}</small>
+          <input bind:value={w.username} maxlength="100" autocomplete="off" placeholder={pve ? 'root@pam!homie' : ''} />
         </label>
         <label>
-          {nas ? 'API key' : 'Password'} {#if !nas}<small>(optional)</small>{/if}
+          {nas ? 'API key' : pve ? 'API token secret' : 'Password'} {#if !nas && !pve}<small>(optional)</small>{/if}
           <input
             type="password"
             bind:value={w.password}
@@ -434,17 +584,69 @@
       {/if}
       {#if saved?.hasPassword && !ups}
         {#if addressChanged}
-          <small>Changing the address or username removes the saved {nas ? 'API key' : 'password'}: enter it again if the host needs one.</small>
+          <small>Changing the address or {pve ? 'token ID' : 'username'} removes the saved {secretName}: enter it again if the host needs one.</small>
         {:else}
-          <label class="check"><input type="checkbox" bind:checked={w.clearPassword} /> Remove the saved {nas ? 'API key' : 'password'}</label>
+          <label class="check"><input type="checkbox" bind:checked={w.clearPassword} /> Remove the saved {secretName}</label>
         {/if}
       {/if}
-      {#if ups}
+      {#if pve}
+        <small>Create the token in Proxmox: Datacenter → Permissions → API Tokens → Add, for a user that has only the <code>PVEAuditor</code> role on <code>/</code> (with “Privilege Separation” on, give the role to the token itself too). The secret is shown once; it is stored on the Homie server and never sent back to the browser.</small>
+      {:else if ups}
         <small>The server must accept connections from the Homie machine: set <code>LISTEN 0.0.0.0 3493</code> in <code>upsd.conf</code> and allow the port in the firewall.</small>
       {:else if nas}
         <small>Create the key in TrueNAS: user menu at the top right → My API Keys → Add API Key, linked to a user that ideally has only the Readonly Admin role. It is stored on the Homie server and never sent back to the browser.</small>
       {:else}
         <small>Glances only supports basic authentication, which is sent unencrypted over plain http. Use it on a trusted network.</small>
+      {/if}
+      {#if w.kind !== 'glances'}
+        <div class="extra">
+          <label class="check">
+            <input type="checkbox" checked={!!w.glances} onchange={(e) => toggleExtra(e.currentTarget.checked)} />
+            Also read this machine's Glances (temperatures, disks, network…)
+          </label>
+          {#if w.glances}
+            <label>
+              Glances address
+              <input bind:value={w.glances.url} placeholder="http://192.168.1.10:61208" inputmode="url" />
+              <small>{pve ? 'The node you are connected to, or leave empty and give one per node below.' : 'The machine itself, running Glances in web server mode (glances -w).'}</small>
+            </label>
+            <div class="two">
+              <label>
+                Username <small>(optional)</small>
+                <input bind:value={w.glances.username} maxlength="100" autocomplete="off" />
+              </label>
+              <label>
+                Password <small>(optional)</small>
+                <input type="password" bind:value={w.glances.password} maxlength="200" autocomplete="new-password" placeholder={saved?.glances?.hasPassword ? '(saved, leave blank to keep)' : ''} />
+              </label>
+            </div>
+            {#if saved?.glances?.hasPassword}
+              <label class="check"><input type="checkbox" bind:checked={w.glances.clearPassword} /> Remove the saved Glances password</label>
+            {/if}
+            {#if pve && nodeNames.length > 0}
+              <small>A cluster has one Glances per node: give each node's address (the same login is used for all of them). Leave a node empty to skip it.</small>
+              {#each nodeNames as n (n)}
+                <label class="node">
+                  {n}
+                  <input value={w.glances.nodes?.[n] ?? ''} oninput={(e) => setNodeUrl(n, e.currentTarget.value)} placeholder="http://… (optional)" inputmode="url" />
+                </label>
+              {/each}
+            {:else if pve}
+              <small>For a cluster: test the connection first, then each node's Glances address can be entered here.</small>
+            {/if}
+            <small>Glances only supports basic authentication, which is sent unencrypted over plain http. Use it on a trusted network.</small>
+            {#if foundExtra}
+              <ul class="probe">
+                {#if foundExtra.glances}
+                  <li class:ok={foundExtra.glances.ok} class:bad={!foundExtra.glances.ok}>{foundExtra.glances.ok ? `Glances: connected (${foundExtra.glances.version})` : `Glances: ${foundExtra.glances.error}`}</li>
+                {/if}
+                {#each Object.entries(foundExtra.nodes ?? {}) as [n, p] (n)}
+                  <li class:ok={p.ok} class:bad={!p.ok}>{n}: {p.ok ? `connected (${p.version})` : p.error}</li>
+                {/each}
+              </ul>
+            {/if}
+          {/if}
+        </div>
       {/if}
       <div class="test">
         <button type="button" onclick={() => test()} disabled={testing}>{testing ? 'Testing…' : 'Test connection'}</button>
@@ -453,9 +655,10 @@
     </fieldset>
     {:else if tab === 'values'}
     <fieldset>
-      <small>Drag to reorder (or use the arrows). {ups ? 'Clients and other values' : nas ? 'Pools and drives' : 'Disks, sensors and network cards'} can be chosen once the connection has been tested.</small>
+      <small>Drag to reorder (or use the arrows). {pve ? 'Guests, storages and nodes' : ups ? 'Clients and other values' : nas ? 'Pools and drives' : 'Disks, sensors and network cards'} can be chosen once the connection has been tested.</small>
       <ul class="rows">
         {#each w.rows as r, i (r.id)}
+          {@const sd = srcData(r)}
           <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
           <li
             class:dragging={dragId === r.id}
@@ -487,7 +690,8 @@
             <div class="rbody">
               <div class="rhead">
                 <strong>{typeLabels[r.type]}</strong>
-                {#if r.type === 'cpu'}
+                {#if r.source === 'glances'}<span class="tag">Glances{r.node ? ` · ${r.node}` : ''}</span>{/if}
+                {#if r.type === 'cpu' && !(pve && !r.source)}
                   <label class="check"><input type="checkbox" checked={r.load} onchange={(e) => setCpu(r, 'load', e.currentTarget.checked)} /> Load</label>
                   <label class="check"><input type="checkbox" checked={r.temp} onchange={(e) => setCpu(r, 'temp', e.currentTarget.checked)} /> Temperature</label>
                 {/if}
@@ -497,16 +701,28 @@
                 <button type="button" class="icon-btn danger" aria-label="Remove" onclick={() => w.rows.splice(i, 1)}>✕</button>
               </div>
               <div class="rfields">
-                {#if r.type === 'temp' || (r.type === 'cpu' && r.temp)}
-                  {@render keyOptions(r, 'CPU (automatic)', (found?.sensors ?? []).map((s) => ({ value: s.label, label: tempLabel(s) })))}
+                {#if pve && !r.source && (r.type === 'cpu' || r.type === 'mem' || r.type === 'uptime')}
+                  {@render keyOptions(r, 'Every node', [...(r.type === 'uptime' ? [] : [{ value: '*', label: 'The whole cluster' }]), ...nodeNames.map((n) => ({ value: n, label: `Node ${n}` }))])}
+                {:else if r.type === 'lxc' || r.type === 'vm'}
+                  {@render keyOptions(r, 'Everything', [
+                    ...nodeNames.map((n) => ({ value: `node:${n}`, label: `Node ${n}` })),
+                    ...poolNames.map((p) => ({ value: `pool:${p}`, label: `Pool ${p}` })),
+                    ...tagNames.map((t) => ({ value: `tag:${t}`, label: `Tag ${t}` })),
+                  ])}
+                {:else if r.type === 'guest'}
+                  {@render keyOptions(r, 'Pick one…', (found?.guests ?? []).filter((g) => !g.template).map((g) => ({ value: String(g.id), label: `${g.id} · ${g.name} (${g.type === 'lxc' ? 'LXC' : 'VM'}, ${g.node})` })))}
+                {:else if r.type === 'storage'}
+                  {@render keyOptions(r, 'All storages', storeIds.map((s) => ({ value: s, label: s })))}
+                {:else if r.type === 'temp' || (r.type === 'cpu' && r.temp)}
+                  {@render keyOptions(r, 'CPU (automatic)', (sd?.sensors ?? []).map((s) => ({ value: s.label, label: tempLabel(s) })))}
                 {:else if r.type === 'disk'}
-                  {@render keyOptions(r, 'All disks', (found?.disks ?? []).map((d) => ({ value: d.mount, label: diskLabel(d) })))}
+                  {@render keyOptions(r, 'All disks', (sd?.disks ?? []).map((d) => ({ value: d.mount, label: diskLabel(d) })))}
                 {:else if r.type === 'pool'}
                   {@render keyOptions(r, 'All pools', (found?.pools ?? []).map((p) => ({ value: p.name, label: `${p.name} · ${p.status}` })))}
                 {:else if r.type === 'drive'}
                   {@render keyOptions(r, 'Hottest drive', (found?.drives ?? []).map((d) => ({ value: d.name, label: `${d.name}${d.model ? ` · ${d.model}` : ''}${d.temp !== undefined ? ` · ${Math.round(d.temp)} °C` : ''}` })))}
                 {:else if r.type === 'network'}
-                  {@render keyOptions(r, 'All physical cards (total)', (found?.network ?? []).map((n) => ({ value: n.name, label: n.virtual ? `${n.name} (virtual)` : n.bridge ? `${n.name} (bridge)` : n.name })))}
+                  {@render keyOptions(r, 'All physical cards (total)', (sd?.network ?? []).map((n) => ({ value: n.name, label: n.virtual ? `${n.name} (virtual)` : n.bridge ? `${n.name} (bridge)` : n.name })))}
                 {:else if r.type === 'voltage'}
                   <select value={r.key === 'output' ? 'output' : 'input'} onchange={(e) => (r.key = e.currentTarget.value === 'output' ? 'output' : undefined)} aria-label="Which voltage">
                     <option value="input">Input (mains)</option>
@@ -547,7 +763,29 @@
         }}
       >
         <option value="">+ Add a value…</option>
-        {#if ups}
+        {#if pve}
+          <option value="nodes">Nodes (state, CPU, memory)</option>
+          <option value="cpu">CPU</option>
+          <option value="mem">Memory</option>
+          <option value="uptime">Uptime</option>
+          <option value="lxc">LXC containers</option>
+          <option value="vm">Virtual machines</option>
+          <option value="storage">Storage</option>
+          <option value="backup">Last backup</option>
+          <option value="quorum">Cluster quorum</option>
+          <option value="tasks">Failed tasks (24 h)</option>
+          <option value="version">Proxmox version</option>
+          {#if found?.guests?.length}
+            <optgroup label="A container or VM">
+              {#each found.guests.filter((g) => !g.template) as g (g.id)}<option value="guest:{g.id}">{g.id} · {g.name} ({g.type === 'lxc' ? 'LXC' : 'VM'})</option>{/each}
+            </optgroup>
+          {/if}
+          {#if found?.storage?.length}
+            <optgroup label="Detected storages">
+              {#each storeIds as s (s)}<option value="storage:{s}">{s}</option>{/each}
+            </optgroup>
+          {/if}
+        {:else if ups}
           <option value="status">UPS status</option>
           <option value="charge">Battery charge</option>
           <option value="runtime">Runtime left</option>
@@ -598,6 +836,22 @@
           <option value="disk">All disks</option>
           <option value="network">Network (all physical cards)</option>
         {/if}
+        {#each glancesTargets as t (t.node)}
+          {@const p = t.node ? `glances@${t.node}/` : 'glances/'}
+          <optgroup label={t.label}>
+            <option value="{p}cpu">CPU</option>
+            <option value="{p}temp">CPU temperature</option>
+            <option value="{p}mem">Memory</option>
+            <option value="{p}swap">Swap</option>
+            <option value="{p}load">Load average</option>
+            <option value="{p}uptime">Uptime</option>
+            <option value="{p}disk">All disks</option>
+            <option value="{p}network">Network (all physical cards)</option>
+            {#each t.data.sensors ?? [] as s (s.label)}<option value="{p}temp:{s.label}">{tempLabel(s)}</option>{/each}
+            {#each t.data.disks ?? [] as d (d.mount)}<option value="{p}disk:{d.mount}">{diskLabel(d)}</option>{/each}
+            {#each t.data.network ?? [] as n (n.name)}<option value="{p}network:{n.name}">{n.name}</option>{/each}
+          </optgroup>
+        {/each}
         {#if found?.disks?.length}
           <optgroup label="Detected disks">
             {#each found.disks as d (d.mount)}<option value="disk:{d.mount}">{diskLabel(d)}</option>{/each}
@@ -817,6 +1071,32 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 12px;
+  }
+  .extra {
+    display: grid;
+    gap: 10px;
+    padding-top: 12px;
+    border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+  }
+  .node {
+    display: grid;
+    grid-template-columns: minmax(70px, 120px) 1fr;
+    align-items: center;
+    gap: 10px;
+  }
+  .probe {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 4px;
+    font-size: 0.85rem;
+  }
+  .probe .ok {
+    color: var(--up);
+  }
+  .probe .bad {
+    color: var(--down);
   }
   .test {
     display: flex;

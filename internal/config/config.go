@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
 	"sync"
 )
 
@@ -125,8 +126,9 @@ type Group struct {
 type Widget struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
-	// Kind is the data source: "glances", "truenas" or "nut" (a UPS; its URL is
-	// nut://host[:port][/ups]).
+	// Kind is the data source: "glances", "truenas", "proxmox" or "nut" (a UPS;
+	// its URL is nut://host[:port][/ups]). For Proxmox VE, Username is the API
+	// token id (user@realm!name) and Password its secret.
 	Kind     string `json:"kind"`
 	URL      string `json:"url"`
 	Username string `json:"username,omitempty"`
@@ -138,6 +140,9 @@ type Widget struct {
 	HasPassword bool `json:"hasPassword,omitempty"`
 	// ClearPassword is input-only: it asks Set to forget the stored password.
 	ClearPassword bool `json:"clearPassword,omitempty"`
+	// Glances is an optional second source for the same machine: its rows (those
+	// with Source "glances") read from a Glances server. Not for a Glances widget.
+	Glances *Extra `json:"glances,omitempty"`
 	// Rows are the values shown, top to bottom.
 	Rows []Row `json:"rows"`
 	// Refresh is how often the data is re-read, in seconds (2-300).
@@ -162,6 +167,35 @@ type Widget struct {
 	LegacyPlacement  string   `json:"placement,omitempty"`
 }
 
+// Extra is an additional source of a widget. Like the main one, its password
+// is write-only.
+type Extra struct {
+	URL      string `json:"url"`
+	Username string `json:"username,omitempty"`
+	Password string `json:"password,omitempty"`
+	// HasPassword is output-only; ClearPassword is input-only (see Widget).
+	HasPassword   bool `json:"hasPassword,omitempty"`
+	ClearPassword bool `json:"clearPassword,omitempty"`
+	// Nodes gives a separate address per node of a Proxmox cluster, which has one
+	// Glances per machine. The same login is used for all of them.
+	Nodes map[string]string `json:"nodes,omitempty"`
+}
+
+// urls lists every address this source sends its credentials to.
+func (e *Extra) urls() []string {
+	if e == nil {
+		return nil
+	}
+	var out []string
+	if e.URL != "" {
+		out = append(out, e.URL)
+	}
+	for _, u := range e.Nodes {
+		out = append(out, u)
+	}
+	return out
+}
+
 // Row is one line of a widget.
 type Row struct {
 	ID string `json:"id"`
@@ -177,6 +211,12 @@ type Row struct {
 	// to each other. The bar follows the load, or the temperature when alone.
 	Load bool `json:"load,omitempty"`
 	Temp bool `json:"temp,omitempty"`
+	// Source says where the value comes from: empty is the widget's own source,
+	// "glances" its extra Glances source (then Type is a Glances row type).
+	Source string `json:"source,omitempty"`
+	// Node, for a row of the extra Glances source of a Proxmox cluster: which
+	// node's Glances to read (empty = the widget's general Glances address).
+	Node string `json:"node,omitempty"`
 	// Role, for a client row of a UPS: "primary" or "secondary" (upsd does not
 	// report it, so it is what the user says the machine is).
 	Role string `json:"role,omitempty"`
@@ -191,6 +231,7 @@ const (
 var RowTypes = map[string][]string{
 	"glances": {"cpu", "mem", "swap", "load", "uptime", "temp", "disk", "network"},
 	"truenas": {"cpu", "mem", "load", "uptime", "version", "pool", "drive", "alerts", "apps"},
+	"proxmox": {"cpu", "mem", "uptime", "version", "nodes", "lxc", "vm", "guest", "storage", "backup", "quorum", "tasks"},
 	"nut":     {"status", "charge", "runtime", "upsload", "power", "voltage", "model", "var", "clients", "client"},
 }
 
@@ -217,6 +258,13 @@ func (c Config) Redacted() Config {
 		w.HasPassword = w.Password != ""
 		w.Password = ""
 		w.ClearPassword = false
+		if w.Glances != nil {
+			g := *w.Glances // a copy: the stored one keeps its password
+			g.HasPassword = g.Password != ""
+			g.Password = ""
+			g.ClearPassword = false
+			w.Glances = &g
+		}
 	}
 	return c
 }
@@ -286,6 +334,13 @@ func (c *Config) normalize() {
 			w.Precise = &legacy
 		}
 		w.HasPassword = false
+		if g := w.Glances; g != nil {
+			g.HasPassword = false
+			g.URL = strings.TrimSpace(g.URL)
+			if g.URL == "" && len(g.Nodes) == 0 {
+				w.Glances = nil // nothing to read: the extra source is off
+			}
+		}
 		migrateWidget(w)
 		if w.Rows == nil {
 			w.Rows = []Row{}
@@ -592,6 +647,12 @@ func (c Config) validateWidgets(seen map[string]bool) error {
 		if len(w.Username) > 100 || len(w.Password) > 200 {
 			return fmt.Errorf("username or password of widget %q is too long", w.Name)
 		}
+		if w.Kind == "proxmox" && !(strings.Contains(w.Username, "@") && strings.Contains(w.Username, "!")) {
+			return fmt.Errorf("widget %q: the Proxmox API token id looks like user@realm!name", w.Name)
+		}
+		if err := validateExtra(w); err != nil {
+			return err
+		}
 		if err := validateRows(w); err != nil {
 			return err
 		}
@@ -614,6 +675,40 @@ func (c Config) validateWidgets(seen map[string]bool) error {
 	return nil
 }
 
+func validateExtra(w Widget) error {
+	g := w.Glances
+	if g == nil {
+		return nil
+	}
+	if w.Kind == "glances" {
+		return fmt.Errorf("widget %q: a Glances widget already reads Glances", w.Name)
+	}
+	if len(g.Username) > 100 || len(g.Password) > 200 || len(g.Nodes) > 50 {
+		return fmt.Errorf("widget %q: the Glances login or node list is too long", w.Name)
+	}
+	check := func(raw string) error {
+		u, err := url.Parse(raw)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || len(raw) > 300 {
+			return fmt.Errorf("widget %q: the Glances address %q must start with http:// or https://", w.Name, raw)
+		}
+		return nil
+	}
+	if g.URL != "" {
+		if err := check(g.URL); err != nil {
+			return err
+		}
+	}
+	for node, raw := range g.Nodes {
+		if node == "" || len(node) > 100 {
+			return fmt.Errorf("widget %q: a Glances node name is missing or too long", w.Name)
+		}
+		if err := check(raw); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func validateRows(w Widget) error {
 	if len(w.Rows) > maxWidgetRows {
 		return fmt.Errorf("widget %q has too many rows (%d max)", w.Name, maxWidgetRows)
@@ -624,8 +719,22 @@ func validateRows(w Widget) error {
 			return fmt.Errorf("widget %q has a row with a missing or duplicate id", w.Name)
 		}
 		ids[r.ID] = true
-		if !slices.Contains(RowTypes[w.Kind], r.Type) {
+		kind := w.Kind
+		switch r.Source {
+		case "":
+		case "glances":
+			if w.Glances == nil || w.Kind == "glances" {
+				return fmt.Errorf("widget %q has a Glances row but no Glances address", w.Name)
+			}
+			kind = "glances"
+		default:
+			return fmt.Errorf("widget %q has a row with an unknown source %q", w.Name, r.Source)
+		}
+		if !slices.Contains(RowTypes[kind], r.Type) {
 			return fmt.Errorf("widget %q has a row of unsupported type %q", w.Name, r.Type)
+		}
+		if len(r.Node) > 100 {
+			return fmt.Errorf("widget %q has a row whose node name is too long", w.Name)
 		}
 		if len(r.Key) > 200 || len(r.Name) > 60 {
 			return fmt.Errorf("widget %q has a row whose name or key is too long", w.Name)
@@ -636,7 +745,8 @@ func validateRows(w Widget) error {
 		if r.Type == "client" && r.Key == "" {
 			return fmt.Errorf("widget %q: a client needs its address", w.Name)
 		}
-		if r.Type == "cpu" && !r.Load && !r.Temp {
+		// A Proxmox node's CPU row has no temperature: that comes from Glances.
+		if r.Type == "cpu" && !r.Load && !r.Temp && !(w.Kind == "proxmox" && r.Source == "") {
 			return fmt.Errorf("widget %q: a CPU row must show the load, the temperature, or both", w.Name)
 		}
 	}
@@ -793,7 +903,33 @@ func (c *Config) keepPasswords(old Config) {
 			w.Password = ""
 		}
 		w.ClearPassword = false
+		if g := w.Glances; g != nil {
+			if g.Password == "" && !g.ClearPassword {
+				for _, o := range old.Widgets {
+					// Only while every address it would be sent to was already one of
+					// the stored ones (the same reasoning as above).
+					if o.ID == w.ID && o.Glances != nil && o.Glances.Username == g.Username && subset(g.urls(), o.Glances.urls()) {
+						g.Password = o.Glances.Password
+						break
+					}
+				}
+			}
+			if g.ClearPassword {
+				g.Password = ""
+			}
+			g.ClearPassword = false
+		}
 	}
+}
+
+// subset reports whether every address of a is also in b.
+func subset(a, b []string) bool {
+	for _, x := range a {
+		if !slices.Contains(b, x) {
+			return false
+		}
+	}
+	return true
 }
 
 // write saves atomically: temp file, then rename.

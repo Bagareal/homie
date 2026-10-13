@@ -491,6 +491,62 @@ func TestUPSWidgets(t *testing.T) {
 	}
 }
 
+func TestProxmoxWidgetsAndTheExtraGlancesSource(t *testing.T) {
+	c := widgetConfig()
+	c.Widgets[0].Kind = "proxmox"
+	c.Widgets[0].URL = "https://192.168.1.10:8006"
+	c.Widgets[0].Username = "root@pam!homie"
+	c.Widgets[0].Rows = []Row{{ID: "a", Type: "lxc"}, {ID: "b", Type: "cpu", Load: true}, {ID: "c", Type: "storage", Key: "local"}, {ID: "d", Type: "quorum"}}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("a Proxmox widget should validate: %v", err)
+	}
+	c.Widgets[0].Username = "homie"
+	if err := c.Validate(); err == nil {
+		t.Error("a Proxmox token id needs user@realm!name")
+	}
+	c.Widgets[0].Username = "root@pam!homie"
+
+	c.Widgets[0].Glances = &Extra{URL: "http://192.168.1.10:61208", Nodes: map[string]string{"pve2": "http://192.168.1.11:61208"}}
+	c.Widgets[0].Rows = append(c.Widgets[0].Rows, Row{ID: "e", Type: "cpu", Temp: true, Source: "glances"}, Row{ID: "f", Type: "disk", Source: "glances", Node: "pve2"})
+	if err := c.Validate(); err != nil {
+		t.Fatalf("the extra Glances source should validate: %v", err)
+	}
+	c.Widgets[0].Rows = []Row{{ID: "a", Type: "lxc", Source: "glances"}}
+	if err := c.Validate(); err == nil {
+		t.Error("a Proxmox row is not a Glances row")
+	}
+	c.Widgets[0].Rows = []Row{{ID: "a", Type: "cpu", Load: true}}
+	c.Widgets[0].Glances.Nodes["pve2"] = "ftp://x"
+	if err := c.Validate(); err == nil {
+		t.Error("a node address must be http or https")
+	}
+	c.Widgets[0].Glances = nil
+	c.Widgets[0].Rows = []Row{{ID: "a", Type: "disk", Source: "glances"}}
+	if err := c.Validate(); err == nil {
+		t.Error("a Glances row needs the Glances source")
+	}
+	g := widgetConfig()
+	g.Widgets[0].Glances = &Extra{URL: "http://x:61208"}
+	if err := g.Validate(); err == nil {
+		t.Error("a Glances widget cannot have an extra Glances source")
+	}
+
+	// An extra source with no address is dropped; Redacted never leaks or alters the stored one.
+	c = widgetConfig()
+	c.Widgets[0].Kind = "truenas"
+	c.Widgets[0].URL = "https://nas"
+	c.Widgets[0].Glances = &Extra{URL: "http://nas:61208", Password: "pw"}
+	red := c.Redacted()
+	if red.Widgets[0].Glances.Password != "" || !red.Widgets[0].Glances.HasPassword || c.Widgets[0].Glances.Password != "pw" {
+		t.Errorf("Redacted: %+v / stored %+v", red.Widgets[0].Glances, c.Widgets[0].Glances)
+	}
+	c.Widgets[0].Glances = &Extra{URL: "  "}
+	c.normalize()
+	if c.Widgets[0].Glances != nil {
+		t.Error("an extra source with nothing to read should be dropped")
+	}
+}
+
 func TestSettingsStayFlatInTheJSON(t *testing.T) {
 	// Appearance is embedded, so a saved config keeps its old shape and old
 	// files keep loading.

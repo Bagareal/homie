@@ -398,3 +398,70 @@ func TestIconUnreachableCDNGivesBadGatewayThenRecovers(t *testing.T) {
 		t.Errorf("got %d, want 502", w.Code)
 	}
 }
+
+func TestMetricsOfForProxmox(t *testing.T) {
+	got := metricsOf("proxmox", []config.Row{{Type: "lxc"}, {Type: "cpu", Load: true}})
+	if want := "resources"; strings.Join(got, ",") != want {
+		t.Errorf("got %v, want %s", got, want)
+	}
+	got = metricsOf("proxmox", []config.Row{{Type: "quorum"}, {Type: "backup"}, {Type: "version"}, {Type: "temp", Source: "glances"}})
+	if want := "resources,version,cluster,tasks"; strings.Join(got, ",") != want {
+		t.Errorf("got %v, want %s", got, want)
+	}
+	// The rows of the extra Glances source are asked of Glances, per node.
+	rows := []config.Row{{Type: "temp", Source: "glances"}, {Type: "disk", Source: "glances", Node: "pve2"}, {Type: "lxc"}}
+	if got := strings.Join(glancesNeeds(rows, ""), ","); got != "sensors" {
+		t.Errorf("general Glances: %q", got)
+	}
+	if got := strings.Join(glancesNeeds(rows, "pve2"), ","); got != "disks" {
+		t.Errorf("pve2 Glances: %q", got)
+	}
+}
+
+func TestExtraGlancesSourceIsMergedAndItsPasswordKept(t *testing.T) {
+	s := newTestServer(t)
+	g := fakeGlances(t)
+	h := s.Handler()
+	put := func(extraPassword string) *httptest.ResponseRecorder {
+		cfg := s.store.Get().Redacted()
+		cfg.Widgets = []config.Widget{{
+			ID: "w1", Name: "PVE", Kind: "proxmox", URL: "https://127.0.0.1:1", Username: "root@pam!homie",
+			Glances: &config.Extra{URL: g.URL, Username: "glances", Password: extraPassword},
+			Rows:    []config.Row{{ID: "r1", Type: "cpu", Load: true, Source: "glances"}}, Refresh: 5, Cols: 1, HeightUnits: 1,
+		}}
+		return doJSON(t, h, "PUT", "/api/config", cfg)
+	}
+	if w := put("s3cret"); w.Code != http.StatusOK || strings.Contains(w.Body.String(), "s3cret") {
+		t.Fatalf("saving: %d %s", w.Code, w.Body.String())
+	}
+	// Saved again with no password (the browser never has it): the stored one stays.
+	if w := put(""); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"hasPassword": true`) && !strings.Contains(w.Body.String(), `"hasPassword":true`) {
+		t.Fatalf("resaving: %d %s", w.Code, w.Body.String())
+	}
+	w := doJSON(t, h, "GET", "/api/widgets", nil)
+	var got map[string]struct {
+		Online bool `json:"online"`
+		Data   struct {
+			Glances struct {
+				CPU float64 `json:"cpu"`
+			} `json:"glances"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	// The Proxmox side is unreachable, the Glances side is not.
+	if got["w1"].Online || got["w1"].Data.Glances.CPU != 21.5 {
+		t.Fatalf("unexpected result: %s", w.Body.String())
+	}
+	// The stored extra password is never sent to a different address.
+	cfg := s.store.Get().Redacted()
+	other := fakeGlances(t)
+	cfg.Widgets[0].Glances.URL = other.URL
+	if r := doJSON(t, h, "PUT", "/api/config", cfg); r.Code != http.StatusOK {
+		t.Fatal(r.Body.String())
+	}
+	if p := s.store.Get().Widgets[0].Glances.Password; p != "" {
+		t.Fatalf("the Glances password followed a changed address: %q", p)
+	}
+}

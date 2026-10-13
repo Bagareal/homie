@@ -1,7 +1,7 @@
 <script lang="ts">
   import { app } from '../lib/state.svelte'
-  import { bytes, duration, percent, rate } from '../lib/format'
-  import type { HostData, RowType, Widget, WidgetData } from '../lib/types'
+  import { ago, bytes, duration, percent, rate } from '../lib/format'
+  import type { HostData, Row, RowType, Widget, WidgetData } from '../lib/types'
   import EditIcon from './EditIcon.svelte'
 
   let {
@@ -71,6 +71,14 @@
     var: 'Value',
     clients: 'Clients',
     client: 'Client',
+    nodes: 'Nodes',
+    lxc: 'LXC',
+    vm: 'VMs',
+    guest: 'Guest',
+    storage: 'Storage',
+    backup: 'Backup',
+    quorum: 'Quorum',
+    tasks: 'Failed tasks',
   }
 
   // ups.status is a list of flags: OL OB LB CHRG DISCHRG RB ...
@@ -114,14 +122,58 @@
     return d.sensors?.find((s) => s.label.toLowerCase() === key.toLowerCase())
   }
 
+  // Proxmox: the guests a row counts. The key is empty (all), node:x, pool:x or tag:x.
+  function guestsFor(d: HostData, type: 'lxc' | 'qemu', key: string | undefined) {
+    const [what, ...rest] = (key ?? '').split(':')
+    const v = rest.join(':')
+    return (d.guests ?? []).filter(
+      (g) =>
+        g.type === type &&
+        !g.template &&
+        (!key || (what === 'node' ? g.node === v : what === 'pool' ? g.pool === v : what === 'tag' ? !!g.tags?.includes(v) : true)),
+    )
+  }
+
+  // Proxmox: a CPU, memory or uptime row is about one node, every node, or the whole cluster.
+  function nodeLines(r: Row, d: HostData, label: string): Line[] {
+    const all = d.nodes ?? []
+    const total = r.key === '*' && r.type !== 'uptime'
+    const picked = total ? [] : r.key && r.key !== '*' ? all.filter((n) => n.name === r.key) : all
+    const na = (l = label): Line => ({ key: r.id, label: l, value: 'n/a' })
+    if (total) {
+      if (r.type === 'cpu') return d.cpu === undefined ? [na()] : [{ key: r.id, label, value: percent(d.cpu), pct: d.cpu, hot: d.cpu >= 90, title: 'Average of the nodes that are online' }]
+      return d.mem ? [{ key: r.id, label, value: `${bytes(d.mem.used)} / ${bytes(d.mem.total)}`, pct: d.mem.percent, hot: d.mem.percent >= 90, title: 'Total of the nodes that are online' }] : [na()]
+    }
+    if (!picked.length) return [na()]
+    return picked.map((n): Line => {
+      const l = picked.length > 1 ? n.name : r.key && r.key !== '*' && !r.name ? `${label} · ${n.name}` : label
+      const key = `${r.id}:${n.name}`
+      if (!n.online) return { key, label: l, value: 'offline', bad: true, title: `${n.name} is not online` }
+      if (r.type === 'cpu') return { key, label: l, value: percent(n.cpu ?? 0), pct: n.cpu ?? 0, hot: (n.cpu ?? 0) >= 90, title: n.cores ? `${n.name}, ${n.cores} cores` : n.name }
+      if (r.type === 'mem') return n.mem ? { key, label: l, value: `${bytes(n.mem.used)} / ${bytes(n.mem.total)}`, pct: n.mem.percent, hot: n.mem.percent >= 90, title: n.name } : na(l)
+      return n.uptime ? { key, label: l, value: n.uptime, title: n.name } : na(l)
+    })
+  }
+
   // One or more lines per row (a disk row without a disk expands to all of them).
   const lines = $derived.by((): Line[] => {
     if (!data?.online) return []
-    const d = data.data
     const out: Line[] = []
     for (const r of widget.rows) {
       const label = r.name || labels[r.type]
-      const na = (): Line => ({ key: r.id, label, value: 'n/a', title: data?.notes?.[r.type === 'mem' ? 'memory' : r.type] })
+      // Rows of the extra Glances source read their own data (a cluster has one per node).
+      const fromGlances = r.source === 'glances'
+      const d: HostData | undefined = fromGlances ? (r.node ? data.data.glancesNodes?.[r.node] : data.data.glances) : data.data
+      const note = (type: string) => (fromGlances ? data?.notes?.[r.node ? `glances:${r.node}` : 'glances'] : undefined) ?? data?.notes?.[type]
+      const na = (): Line => ({ key: r.id, label, value: 'n/a', title: note(r.type === 'mem' ? 'memory' : r.type) })
+      if (!d) {
+        out.push(na())
+        continue
+      }
+      if (widget.kind === 'proxmox' && !fromGlances && (r.type === 'cpu' || r.type === 'mem' || r.type === 'uptime')) {
+        out.push(...nodeLines(r, d, label))
+        continue
+      }
       switch (r.type) {
         case 'cpu': {
           const t = r.temp ? sensorFor(d, r.key) : undefined
@@ -311,6 +363,112 @@
             bad: !here,
             title: r.key,
           })
+          break
+        }
+        case 'nodes': {
+          const nodes = d.nodes ?? []
+          if (!nodes.length) out.push(na())
+          for (const n of nodes)
+            out.push(
+              n.online
+                ? { key: `${r.id}:${n.name}`, label: n.name, value: `CPU ${percent(n.cpu ?? 0)} · RAM ${percent(n.mem?.percent ?? 0)}`, pct: n.cpu ?? 0, hot: (n.cpu ?? 0) >= 90, title: n.uptime ? `Up ${n.uptime}` : undefined }
+                : { key: `${r.id}:${n.name}`, label: n.name, value: 'offline', bad: true, title: `${n.name} is not online` },
+            )
+          break
+        }
+        case 'lxc':
+        case 'vm': {
+          if (!d.guests) {
+            out.push(na())
+            break
+          }
+          const mine = guestsFor(d, r.type === 'lxc' ? 'lxc' : 'qemu', r.key)
+          const running = mine.filter((g) => g.status === 'running')
+          const stopped = mine.filter((g) => g.status !== 'running')
+          const scope = r.key ? ` · ${r.key.slice(r.key.indexOf(':') + 1)}` : ''
+          out.push({
+            key: r.id,
+            label: r.name || `${labels[r.type]}${scope}`,
+            value: `${running.length} / ${mine.length}`,
+            title: stopped.length ? `Not running: ${stopped.map((g) => `${g.name} (${g.id})`).join(', ')}` : mine.length ? 'All running' : 'None',
+          })
+          break
+        }
+        case 'guest': {
+          const g = d.guests?.find((x) => String(x.id) === r.key)
+          if (!g) {
+            out.push({ key: r.id, label: r.name || r.key || labels.guest, value: 'n/a', title: note('guest') })
+            break
+          }
+          const on = g.status === 'running'
+          out.push({
+            key: r.id,
+            label: r.name || g.name,
+            value: on ? `CPU ${percent(g.cpu)} · ${bytes(g.mem.used)}` : g.status === 'stopped' ? 'Stopped' : g.status,
+            pct: on ? g.cpu : undefined,
+            hot: on && g.cpu >= 90,
+            title: `${g.type === 'lxc' ? 'LXC' : 'VM'} ${g.id} on ${g.node}${g.uptime ? `, up ${g.uptime}` : ''}${g.tags?.length ? `, tags: ${g.tags.join(', ')}` : ''}`,
+          })
+          break
+        }
+        case 'storage': {
+          const all = d.storage ?? []
+          const picked = r.key ? all.filter((s) => s.id === r.key) : all
+          if (!picked.length) out.push({ key: r.id, label: r.name || r.key || labels.storage, value: 'n/a', title: note('storage') })
+          for (const s of picked) {
+            // The same name on several nodes: say which one.
+            const dup = all.filter((x) => x.id === s.id).length > 1
+            const l = r.key && r.name ? r.name : dup ? `${s.id} · ${s.node}` : s.id
+            const key = `${r.id}:${s.id}:${s.node}`
+            const kind = `${s.type ?? 'storage'}${s.shared ? ', shared' : ''}`
+            if (s.status && s.status !== 'available') out.push({ key, label: l, value: 'unavailable', bad: true, title: `${kind}: ${s.status}` })
+            else if (!s.total) out.push({ key, label: l, value: 'n/a', title: kind })
+            else out.push({ key, label: l, value: `${bytes(s.used)} / ${bytes(s.total)}`, pct: s.percent, hot: s.percent >= 90, title: kind })
+          }
+          break
+        }
+        case 'backup': {
+          const b = d.backup
+          if (data.notes?.tasks) out.push(na())
+          else if (!b) out.push({ key: r.id, label, value: 'None yet', title: 'No backup job has run recently' })
+          else {
+            const when = ago(b.end)
+            const text = { ok: 'OK', warnings: 'Warnings', failed: 'Failed', running: 'Running' }[b.status]
+            out.push({
+              key: r.id,
+              label,
+              value: b.status === 'running' ? 'Running' : `${text}${when ? ` · ${when}` : ''}`,
+              bad: b.status === 'failed',
+              title: [b.node, b.message].filter(Boolean).join(': ') || undefined,
+            })
+          }
+          break
+        }
+        case 'quorum': {
+          const c = d.cluster
+          if (data.notes?.cluster) out.push(na())
+          else if (!c) out.push({ key: r.id, label, value: 'Standalone', title: 'This node is not part of a cluster' })
+          else
+            out.push({
+              key: r.id,
+              label,
+              value: `${c.quorate ? 'Quorate' : 'No quorum'} · ${c.online} / ${c.nodes} nodes online`,
+              bad: !c.quorate || c.online < c.nodes,
+              title: c.name ? `Cluster ${c.name}` : undefined,
+            })
+          break
+        }
+        case 'tasks': {
+          const t = d.tasks
+          if (!t) out.push(na())
+          else
+            out.push({
+              key: r.id,
+              label,
+              value: t.failed === 0 ? 'None in 24 h' : `${t.failed} in 24 h`,
+              bad: t.failed > 0,
+              title: (t.items ?? []).map((i) => `${i.type} on ${i.node}: ${i.status}`).join(String.fromCharCode(10)) || undefined,
+            })
           break
         }
         case 'apps': {
