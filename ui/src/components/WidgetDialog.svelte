@@ -183,7 +183,8 @@
   function normalizeUrl(raw: string): string {
     const v = raw.trim()
     const full = v && !/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? `${w.kind === 'truenas' || w.kind === 'proxmox' ? 'https' : w.kind === 'nut' ? 'nut' : 'http'}://${v}` : v
-    return withDefaultPort(full, DEFAULT_PORT[w.kind])
+    // Proxmox VE only speaks https: a typed http:// would just be redirected.
+    return withDefaultPort(w.kind === 'proxmox' ? full.replace(/^http:\/\//i, 'https://') : full, DEFAULT_PORT[w.kind])
   }
 
   // What the editor previews until the host has been read.

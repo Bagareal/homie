@@ -116,6 +116,17 @@ func TestFailedBackup(t *testing.T) {
 	}
 }
 
+func TestPlainHTTPRedirectIsExplained(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://pve.example/api2/json/version", http.StatusMovedPermanently)
+	}))
+	defer srv.Close()
+	_, err := New().Ping(context.Background(), Target{URL: srv.URL, TokenID: token, Secret: secret})
+	if err == nil || !strings.Contains(err.Error(), "use https://") {
+		t.Fatalf("expected a hint to use https, got %v", err)
+	}
+}
+
 func TestStandaloneHasNoCluster(t *testing.T) {
 	if clusterOf([]clusterEntry{{Type: "node", Name: "pve", Online: 1}}) != nil {
 		t.Error("a standalone node is not a cluster")

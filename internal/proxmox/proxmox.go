@@ -172,6 +172,13 @@ func (c *Client) get(ctx context.Context, t Target, path string, v any) error {
 		return errAuth
 	case resp.StatusCode == http.StatusForbidden:
 		return errPerm
+	case resp.StatusCode >= 300 && resp.StatusCode < 400:
+		// A plain http address is answered with a redirect to https. It is not followed
+		// (it could carry the token elsewhere), but the user is told where it goes.
+		if loc := resp.Header.Get("Location"); loc != "" {
+			return fmt.Errorf("the address redirects to %s: Proxmox VE speaks https, so use https:// and its port (8006)", loc)
+		}
+		return fmt.Errorf("the server answered %s: Proxmox VE speaks https on port 8006", resp.Status)
 	case resp.StatusCode >= 300:
 		return fmt.Errorf("the server answered %s (is this the Proxmox VE address, port 8006?)", resp.Status)
 	}

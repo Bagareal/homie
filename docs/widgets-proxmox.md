@@ -59,6 +59,7 @@ If Glances cannot be reached, only its rows show `n/a` (hover for the reason); t
 
 - *authentication failed*: the token ID must be written exactly `user@realm!name` and the secret must be the one shown at creation; a token that was deleted or expired no longer works.
 - *permission denied* or a list that is empty / missing nodes: the role is not on `/` with propagation, or the token has Privilege Separation without its own permission (see step 1).
+- *the address redirects to https://…*: you wrote `http://`; Proxmox VE speaks only https (Homie now corrects a typed `http://` by itself).
 - *cannot reach the server*: the address must be a Proxmox node on port 8006 and reachable from the Homie container. Prefer the node's address to one behind a reverse proxy.
 - *Last backup* says `None yet`: Proxmox keeps a limited history of tasks; it only shows jobs of the recent past.
 - Not tested on a real cluster: the cluster rows were built from the Proxmox documentation and checked against a simulated three-node cluster. If something looks wrong on yours, the raw answers of `/cluster/resources` and `/cluster/status` (`pvesh get /cluster/resources --output-format json`) show what Proxmox really reports.
