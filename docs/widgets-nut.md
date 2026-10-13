@@ -24,9 +24,19 @@ upsc myups@192.168.1.10
 
 (or, without NUT installed: `printf 'LIST UPS\n' | nc 192.168.1.10 3493`).
 
+## One widget per machine
+
+NUT often runs on a machine that does other things too (a Raspberry Pi that is also a server, a Proxmox host...). You do not need a widget for each: the UPS can be an **extra source** of any other widget, and the other way round.
+
+- A **UPS** widget can also read the same machine's **Glances** (CPU, memory, temperature, disks, network).
+- A **Glances**, **Proxmox VE** or **TrueNAS** widget can also read the UPS: in its Source tab tick **Also read this machine's UPS (NUT server)**, enter `nut://host`, and press its own **Test UPS** button (each source has its own Test button, and its result stays under it).
+- The menu "+ Add a value…" then has a group **UPS (NUT)** with the rows below, and each such row carries a small *UPS* tag. Every row you add keeps working exactly as in a UPS widget, including the clients with their name and role.
+
+A UPS widget you already have keeps working as it is. Keep it for a machine that has only NUT.
+
 ## 2. Add the widget in Homie
 
-**Edit → Add widget → UPS (NUT server)**, enter `nut://` and the address of the machine running `upsd`, then press **Test connection**. Homie shows the UPS it found and lists everything that UPS reports and the machines connected to it.
+**Edit → Add widget → UPS (NUT server)** (or, as an extra source, the section described above), enter `nut://` and the address of the machine running `upsd`, then press **Test connection**. Homie shows the UPS it found and lists everything that UPS reports and the machines connected to it.
 
 Values you can show:
 

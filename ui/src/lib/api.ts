@@ -40,11 +40,13 @@ export const testWidget = (w: {
   username: string
   password: string
   // "glances": test only the extra source (the editor has a Test button for each source).
-  only?: 'glances'
+  only?: 'glances' | 'nut'
+  // The extra UPS source (an address).
+  nut?: { url: string }
   // The extra Glances source, tested along with the main one.
   glances?: { url: string; username: string; password: string; nodes?: Record<string, string> }
 }) =>
-  request<ProbeResult & { extra?: { glances?: ProbeResult; nodes?: Record<string, ProbeResult> } }>('api/widgets/test', {
+  request<ProbeResult & { extra?: { glances?: ProbeResult; nodes?: Record<string, ProbeResult>; nut?: ProbeResult } }>('api/widgets/test', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(w),

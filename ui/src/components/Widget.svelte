@@ -163,14 +163,16 @@
       const label = r.name || labels[r.type]
       // Rows of the extra Glances source read their own data (a cluster has one per node).
       const fromGlances = r.source === 'glances'
-      const d: HostData | undefined = fromGlances ? (r.node ? data.data.glancesNodes?.[r.node] : data.data.glances) : data.data
-      const note = (type: string) => (fromGlances ? data?.notes?.[r.node ? `glances:${r.node}` : 'glances'] : undefined) ?? data?.notes?.[type]
+      const fromNUT = r.source === 'nut'
+      const d: HostData | undefined = fromNUT ? data.data.nut : fromGlances ? (r.node ? data.data.glancesNodes?.[r.node] : data.data.glances) : data.data
+      const note = (type: string) =>
+        (fromNUT ? data?.notes?.nut : fromGlances ? data?.notes?.[r.node ? `glances:${r.node}` : 'glances'] : undefined) ?? data?.notes?.[type]
       const na = (): Line => ({ key: r.id, label, value: 'n/a', title: note(r.type === 'mem' ? 'memory' : r.type) })
       if (!d) {
         out.push(na())
         continue
       }
-      if (widget.kind === 'proxmox' && !fromGlances && (r.type === 'cpu' || r.type === 'mem' || r.type === 'uptime')) {
+      if (widget.kind === 'proxmox' && !fromGlances && !fromNUT && (r.type === 'cpu' || r.type === 'mem' || r.type === 'uptime')) {
         out.push(...nodeLines(r, d, label))
         continue
       }

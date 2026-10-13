@@ -547,6 +547,52 @@ func TestProxmoxWidgetsAndTheExtraGlancesSource(t *testing.T) {
 	}
 }
 
+func TestUPSAsAnExtraSource(t *testing.T) {
+	for _, kind := range []string{"glances", "proxmox", "truenas"} {
+		c := widgetConfig()
+		c.Widgets[0].Kind = kind
+		c.Widgets[0].URL = "https://192.168.1.10"
+		c.Widgets[0].Username = "root@pam!homie"
+		c.Widgets[0].Rows = []Row{{ID: "a", Type: "charge", Source: "nut"}, {ID: "b", Type: "client", Key: "10.0.0.2", Role: "secondary", Source: "nut"}}
+		c.Widgets[0].NUT = &UPSExtra{URL: "nut://192.168.1.10"}
+		if err := c.Validate(); err != nil {
+			t.Fatalf("%s with a UPS source should validate: %v", kind, err)
+		}
+		c.Widgets[0].NUT.URL = "http://192.168.1.10"
+		if err := c.Validate(); err == nil {
+			t.Errorf("%s: the UPS address must start with nut://", kind)
+		}
+		c.Widgets[0].NUT = nil
+		if err := c.Validate(); err == nil {
+			t.Errorf("%s: a UPS row needs the UPS source", kind)
+		}
+	}
+	// A UPS widget already is one, and it can still read Glances.
+	c := widgetConfig()
+	c.Widgets[0].Kind = "nut"
+	c.Widgets[0].URL = "nut://192.168.1.10"
+	c.Widgets[0].NUT = &UPSExtra{URL: "nut://192.168.1.11"}
+	if err := c.Validate(); err == nil {
+		t.Error("a UPS widget cannot have a UPS source")
+	}
+	c.Widgets[0].NUT = nil
+	c.Widgets[0].Glances = &Extra{URL: "http://192.168.1.10:61208"}
+	c.Widgets[0].Rows = []Row{{ID: "a", Type: "status"}, {ID: "b", Type: "cpu", Load: true, Source: "glances"}}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("a UPS widget with Glances should validate: %v", err)
+	}
+	// An empty UPS address means the source is off.
+	c.Widgets[0].Glances = nil
+	c.Widgets[0].Rows = []Row{{ID: "a", Type: "status"}}
+	c.Widgets[0].Kind = "truenas"
+	c.Widgets[0].URL = "https://nas"
+	c.Widgets[0].NUT = &UPSExtra{URL: "  "}
+	c.normalize()
+	if c.Widgets[0].NUT != nil {
+		t.Error("an empty UPS source should be dropped")
+	}
+}
+
 func TestSettingsStayFlatInTheJSON(t *testing.T) {
 	// Appearance is embedded, so a saved config keeps its old shape and old
 	// files keep loading.

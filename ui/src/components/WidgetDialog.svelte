@@ -104,6 +104,8 @@
   let found = $state<HostData | null>(null)
   // What the extra Glances source reported at the last test: the general address and each node's.
   let foundExtra = $state<{ glances?: api.ProbeResult; nodes?: Record<string, api.ProbeResult> } | null>(null)
+  // What the extra UPS source reported at the last test.
+  let foundNut = $state<api.ProbeResult | null>(null)
 
   type Tab = 'source' | 'values' | 'size' | 'look'
   const tabs: [Tab, string][] = [
@@ -160,8 +162,10 @@
     w.rows = defaultRows(kind)
     w.password = ''
     w.glances = undefined
+    w.nut = undefined
     found = null
     foundExtra = null
+    foundNut = null
     testResult = null
   }
   const addressChanged = $derived(!!saved?.hasPassword && (normalizeUrl(w.url) !== saved.url || (w.username ?? '').trim() !== (saved.username ?? '')))
@@ -263,6 +267,7 @@
           data: {
             ...found,
             glances: foundExtra?.glances?.data,
+            nut: foundNut?.data,
             glancesNodes: Object.fromEntries(Object.entries(foundExtra?.nodes ?? {}).filter(([, p]) => p.data).map(([n, p]) => [n, p.data!])),
           },
         }
@@ -320,8 +325,12 @@
         username: (w.username ?? '').trim(),
         password: w.password ?? '',
         glances: both ? glancesPayload() : undefined,
+        nut: both && w.nut?.url.trim() ? { url: normalizeNut(w.nut.url) } : undefined,
       })
-      if (both) foundExtra = r.extra ?? null
+      if (both) {
+        foundExtra = r.extra ?? null
+        foundNut = r.extra?.nut ?? null
+      }
       if (r.ok) {
         found = r.data ?? null
         testResult = { ok: true, text: `Connected${r.version ? ` (${ups ? 'UPS: ' : nas || pve ? '' : 'Glances '}${r.version})` : ''}` }
@@ -344,6 +353,55 @@
     const choice = await app.confirmUnsaved('widget')
     if (choice === 'discard') dialog.close()
     else if (choice === 'save') form.requestSubmit()
+  }
+
+  // ---- the extra UPS source
+
+  const normalizeNut = (raw: string) => {
+    const v = (raw ?? '').trim()
+    return v && !/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? `nut://${v}` : v
+  }
+
+  async function toggleNut(on: boolean) {
+    if (on) {
+      w.nut = { url: '' }
+      return
+    }
+    const mine = w.rows.filter((r) => r.source === 'nut').length
+    if (mine > 0) {
+      const ok = await app.confirm({
+        title: 'Turn off the UPS',
+        message: `This also removes the ${mine} value${mine === 1 ? '' : 's'} read from the UPS.`,
+        confirmLabel: 'Turn off',
+        danger: true,
+      })
+      if (!ok) return
+    }
+    w.rows = w.rows.filter((r) => r.source !== 'nut')
+    w.nut = undefined
+    foundNut = null
+  }
+
+  // The Test button of the UPS section: it tests only the UPS.
+  let testingNut = $state(false)
+  let nutError = $state('')
+  async function testNut() {
+    foundNut = null
+    nutError = ''
+    const url = normalizeNut(w.nut?.url ?? '')
+    if (!url) {
+      nutError = 'Enter the UPS address first.'
+      return
+    }
+    testingNut = true
+    try {
+      const r = await api.testWidget({ kind: w.kind, url: normalizeUrl(w.url), username: '', password: '', only: 'nut', nut: { url } })
+      foundNut = r.extra?.nut ?? null
+    } catch (e) {
+      nutError = (e as Error).message
+    } finally {
+      testingNut = false
+    }
   }
 
   // ---- the extra Glances source
@@ -386,6 +444,7 @@
 
   // What a row can pick from: the main source's data, or the extra Glances source's.
   function srcData(r: Row): HostData | null | undefined {
+    if (r.source === 'nut') return foundNut?.data
     if (r.source !== 'glances') return found
     return r.node ? foundExtra?.nodes?.[r.node]?.data : foundExtra?.glances?.data
   }
@@ -407,7 +466,10 @@
     if (!value) return
     let source: Row['source']
     let node: string | undefined
-    if (value.startsWith('glances')) {
+    if (value.startsWith('nut/')) {
+      source = 'nut'
+      value = value.slice('nut/'.length)
+    } else if (value.startsWith('glances')) {
       const slash = value.indexOf('/')
       const head = value.slice(0, slash)
       source = 'glances'
@@ -475,16 +537,27 @@
       }
       if (gurl || Object.keys(nodes).length) glances = { ...g, url: gurl, username: (g.username ?? '').trim(), nodes }
     }
+    let nut: Widget['nut']
+    if (w.nut && w.nut.url.trim()) {
+      const nurl = normalizeNut(w.nut.url)
+      try {
+        if (new URL(nurl).protocol !== 'nut:') throw new Error()
+      } catch {
+        return fail('source', `The UPS address “${nurl}” is not valid, for example nut://192.168.1.10.`)
+      }
+      nut = { url: nurl }
+    }
     const out: Widget = {
       ...$state.snapshot(w),
       glances,
+      nut,
       id: saved?.id ?? uid(),
       name: w.name.trim(),
       url,
       username: (w.username ?? '').trim(),
       // Changing the address or username drops the stored password on the server.
       clearPassword: !!w.clearPassword || (addressChanged && !w.password),
-      rows: w.rows.filter((r) => r.source !== 'glances' || glances).map((r) => ({ ...$state.snapshot(r), name: (r.name ?? '').trim() })),
+      rows: w.rows.filter((r) => (r.source !== 'glances' || glances) && (r.source !== 'nut' || nut)).map((r) => ({ ...$state.snapshot(r), name: (r.name ?? '').trim() })),
     }
     if (shareLook) {
       // Its own settings move to Settings → Widgets; the widget then simply follows them.
@@ -689,6 +762,30 @@
           {/if}
         </div>
       {/if}
+      {#if w.kind !== 'nut'}
+        <div class="extra">
+          <label class="check">
+            <input type="checkbox" checked={!!w.nut} onchange={(e) => toggleNut(e.currentTarget.checked)} />
+            Also read this machine's UPS (NUT server)
+          </label>
+          {#if w.nut}
+            <label>
+              NUT server address
+              <input bind:value={w.nut.url} placeholder="nut://192.168.1.10" inputmode="url" />
+              <small>The machine running <code>upsd</code>, as <code>nut://host</code> (port 3493) or <code>nut://host:port</code>; add the UPS name, <code>nut://host/myups</code>, if it has several. Reading needs no password. Press Test UPS: the result is shown under it.</small>
+            </label>
+            <div class="test">
+              <button type="button" onclick={testNut} disabled={testingNut}>{testingNut ? 'Testing…' : 'Test UPS'}</button>
+              {#if nutError}<span class="bad" role="status">{nutError}</span>{/if}
+            </div>
+            {#if foundNut}
+              <ul class="probe">
+                <li class:ok={foundNut.ok} class:bad={!foundNut.ok}>{foundNut.ok ? `UPS: connected (${foundNut.version})` : `UPS: ${foundNut.error}`}</li>
+              </ul>
+            {/if}
+          {/if}
+        </div>
+      {/if}
     </fieldset>
     {:else if tab === 'values'}
     <fieldset>
@@ -727,7 +824,7 @@
             <div class="rbody">
               <div class="rhead">
                 <strong>{typeLabels[r.type]}</strong>
-                {#if r.source === 'glances'}<span class="tag">Glances{r.node ? ` · ${r.node}` : ''}</span>{/if}
+                {#if r.source === 'glances'}<span class="tag">Glances{r.node ? ` · ${r.node}` : ''}</span>{:else if r.source === 'nut'}<span class="tag">UPS</span>{/if}
                 {#if r.type === 'cpu' && !(pve && !r.source)}
                   <label class="check"><input type="checkbox" checked={r.load} onchange={(e) => setCpu(r, 'load', e.currentTarget.checked)} /> Load</label>
                   <label class="check"><input type="checkbox" checked={r.temp} onchange={(e) => setCpu(r, 'temp', e.currentTarget.checked)} /> Temperature</label>
@@ -766,11 +863,11 @@
                     <option value="output">Output</option>
                   </select>
                 {:else if r.type === 'var'}
-                  {@render keyOptions(r, 'Pick a value…', Object.entries(found?.vars ?? {}).map(([k, v]) => ({ value: k, label: `${k} · ${v}` })))}
+                  {@render keyOptions(r, 'Pick a value…', Object.entries(sd?.vars ?? {}).map(([k, v]) => ({ value: k, label: `${k} · ${v}` })))}
                 {:else if r.type === 'client'}
                   <input bind:value={r.key} maxlength="100" list="clients-{r.id}" placeholder="Address, e.g. 192.168.1.20" aria-label="Address of the client" />
                   <datalist id="clients-{r.id}">
-                    {#each found?.clients ?? [] as c (c)}<option value={c}></option>{/each}
+                    {#each sd?.clients ?? [] as c (c)}<option value={c}></option>{/each}
                   </datalist>
                   <select bind:value={r.role} aria-label="Role of the client">
                     <option value={undefined}>Role not set</option>
@@ -872,6 +969,21 @@
           <option value="temp">Temperature (CPU)</option>
           <option value="disk">All disks</option>
           <option value="network">Network (all physical cards)</option>
+        {/if}
+        {#if foundNut?.data}
+          <optgroup label="UPS (NUT)">
+            <option value="nut/status">UPS status</option>
+            <option value="nut/charge">Battery charge</option>
+            <option value="nut/runtime">Runtime left</option>
+            <option value="nut/upsload">UPS load</option>
+            <option value="nut/power">Power</option>
+            <option value="nut/voltage">Input voltage</option>
+            <option value="nut/voltage:output">Output voltage</option>
+            <option value="nut/model">UPS model</option>
+            <option value="nut/clients">Connected clients (count)</option>
+            {#each foundNut.data.clients ?? [] as c (c)}<option value="nut/client:{c}">Client {c}</option>{/each}
+            {#each Object.entries(foundNut.data.vars ?? {}) as [k, v] (k)}<option value="nut/var:{k}">{k} · {v}</option>{/each}
+          </optgroup>
         {/if}
         {#each glancesTargets as t (t.node)}
           {@const p = t.node ? `glances@${t.node}/` : 'glances/'}

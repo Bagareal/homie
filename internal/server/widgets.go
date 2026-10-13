@@ -148,26 +148,47 @@ func glancesNeeds(rows []config.Row, node string) []string {
 	return metricsOf("glances", mine)
 }
 
+// usesSource tells whether any row reads from the given extra source.
+func usesSource(rows []config.Row, source string) bool {
+	for _, r := range rows {
+		if r.Source == source {
+			return true
+		}
+	}
+	return false
+}
+
 // withExtra adds what the widget's extra Glances source reads to the main
 // reading: data.glances, and data.glancesNodes[node] for a cluster. A failure
 // is explained in notes, and the rows that depend on it show n/a.
 func (c *widgetCache) withExtra(ctx context.Context, w config.Widget, main any) any {
 	g := w.Glances
-	if g == nil {
+	useNUT := w.NUT != nil && usesSource(w.Rows, "nut")
+	if g == nil && !useNUT {
 		return main
 	}
 	type job struct {
 		node, url string
 	}
 	var jobs []job
-	if g.URL != "" {
-		jobs = append(jobs, job{"", g.URL})
-	}
-	for node, u := range g.Nodes {
-		jobs = append(jobs, job{node, u})
+	if g != nil {
+		if g.URL != "" {
+			jobs = append(jobs, job{"", g.URL})
+		}
+		for node, u := range g.Nodes {
+			jobs = append(jobs, job{node, u})
+		}
 	}
 	results := make([]glances.Result, len(jobs))
 	var wg sync.WaitGroup
+	var ups nut.Result
+	if useNUT {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ups = c.nut.Fetch(ctx, nut.Target{URL: w.NUT.URL})
+		}()
+	}
 	for i, j := range jobs {
 		metrics := glancesNeeds(w.Rows, j.node)
 		if len(metrics) == 0 {
@@ -218,6 +239,13 @@ func (c *widgetCache) withExtra(ctx context.Context, w config.Widget, main any) 
 	if len(nodes) > 0 {
 		data["glancesNodes"] = nodes
 	}
+	if useNUT {
+		if ups.Online {
+			data["nut"] = ups.Data
+		} else {
+			notes["nut"] = "UPS: " + ups.Error
+		}
+	}
 	if len(notes) > 0 {
 		out["notes"] = notes
 	}
@@ -227,6 +255,9 @@ func (c *widgetCache) withExtra(ctx context.Context, w config.Widget, main any) 
 // cacheKey changes whenever anything that affects the reading does.
 func cacheKey(w config.Widget) string {
 	parts := []string{w.Kind, w.URL, w.Username, w.Password, strings.Join(metricsOf(w.Kind, w.Rows), ",")}
+	if w.NUT != nil && usesSource(w.Rows, "nut") {
+		parts = append(parts, "nut", w.NUT.URL)
+	}
 	if g := w.Glances; g != nil {
 		parts = append(parts, g.URL, g.Username, g.Password, strings.Join(glancesNeeds(w.Rows, ""), ","))
 		nodes := make([]string, 0, len(g.Nodes))
@@ -306,9 +337,13 @@ func (s *Server) testWidget(w http.ResponseWriter, r *http.Request) {
 		URL      string `json:"url"`
 		Username string `json:"username"`
 		Password string `json:"password"`
-		// Only "glances" tests just the extra source: the editor has one Test button
-		// for the main source and another for Glances.
+		// Only "glances" or "nut" tests just that extra source: the editor has a Test
+		// button for the main source and one for each extra.
 		Only string `json:"only"`
+		// NUT is the extra UPS source (an address, nothing secret).
+		NUT *struct {
+			URL string `json:"url"`
+		} `json:"nut"`
 		// Glances is the extra source of the widget, tested along with the main one.
 		Glances *struct {
 			URL      string            `json:"url"`
@@ -331,6 +366,14 @@ func (s *Server) testWidget(w http.ResponseWriter, r *http.Request) {
 				stored = &saved
 			}
 		}
+	}
+	if req.Only == "nut" {
+		if req.NUT == nil || strings.TrimSpace(req.NUT.URL) == "" {
+			writeError(w, http.StatusBadRequest, "enter the UPS address first")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "extra": map[string]any{"nut": s.testUPS(r.Context(), req.NUT.URL)}})
+		return
 	}
 	if req.Only == "glances" {
 		if req.Glances == nil {
@@ -367,8 +410,15 @@ func (s *Server) testWidget(w http.ResponseWriter, r *http.Request) {
 
 	reply := func(version string, data any) {
 		out := map[string]any{"ok": true, "version": version, "data": data}
+		extra := map[string]any{}
 		if req.Glances != nil && req.Kind != "glances" {
-			out["extra"] = s.testGlances(r.Context(), stored, req.Glances.URL, req.Glances.Username, req.Glances.Password, req.Glances.Nodes)
+			extra = s.testGlances(r.Context(), stored, req.Glances.URL, req.Glances.Username, req.Glances.Password, req.Glances.Nodes)
+		}
+		if req.NUT != nil && req.Kind != "nut" && strings.TrimSpace(req.NUT.URL) != "" {
+			extra["nut"] = s.testUPS(r.Context(), req.NUT.URL)
+		}
+		if len(extra) > 0 {
+			out["extra"] = extra
 		}
 		writeJSON(w, http.StatusOK, out)
 	}
@@ -425,6 +475,20 @@ func (s *Server) testWidget(w http.ResponseWriter, r *http.Request) {
 		t.Metrics = glances.Metrics
 		reply(version, s.widgets.glances.Fetch(r.Context(), t).Data)
 	}
+}
+
+// testUPS reads the extra UPS source for the editor.
+func (s *Server) testUPS(ctx context.Context, rawURL string) map[string]any {
+	t := nut.Target{URL: strings.TrimSpace(rawURL)}
+	list, err := s.widgets.nut.Ping(ctx, t)
+	if err != nil {
+		return map[string]any{"ok": false, "error": err.Error()}
+	}
+	res := s.widgets.nut.Fetch(ctx, t)
+	if !res.Online {
+		return map[string]any{"ok": false, "error": res.Error}
+	}
+	return map[string]any{"ok": true, "version": strings.Join(list, ", "), "data": res.Data}
 }
 
 // testGlances reads the extra Glances source (the general address and one per

@@ -143,6 +143,9 @@ type Widget struct {
 	// Glances is an optional second source for the same machine: its rows (those
 	// with Source "glances") read from a Glances server. Not for a Glances widget.
 	Glances *Extra `json:"glances,omitempty"`
+	// NUT is another optional source: the UPS of the machine, read from its NUT
+	// server (rows with Source "nut"). Not for a UPS widget, which is one already.
+	NUT *UPSExtra `json:"nut,omitempty"`
 	// Rows are the values shown, top to bottom.
 	Rows []Row `json:"rows"`
 	// Refresh is how often the data is re-read, in seconds (2-300).
@@ -181,6 +184,12 @@ type Extra struct {
 	Nodes map[string]string `json:"nodes,omitempty"`
 }
 
+// UPSExtra is the NUT server of a widget that is about something else. Reading
+// a NUT server needs no login, so there is nothing secret in it.
+type UPSExtra struct {
+	URL string `json:"url"` // nut://host[:port][/ups]
+}
+
 // urls lists every address this source sends its credentials to.
 func (e *Extra) urls() []string {
 	if e == nil {
@@ -212,7 +221,8 @@ type Row struct {
 	Load bool `json:"load,omitempty"`
 	Temp bool `json:"temp,omitempty"`
 	// Source says where the value comes from: empty is the widget's own source,
-	// "glances" its extra Glances source (then Type is a Glances row type).
+	// "glances" its extra Glances source or "nut" its extra UPS source (then Type
+	// is a row type of that kind).
 	Source string `json:"source,omitempty"`
 	// Node, for a row of the extra Glances source of a Proxmox cluster: which
 	// node's Glances to read (empty = the widget's general Glances address).
@@ -334,6 +344,12 @@ func (c *Config) normalize() {
 			w.Precise = &legacy
 		}
 		w.HasPassword = false
+		if w.NUT != nil {
+			w.NUT.URL = strings.TrimSpace(w.NUT.URL)
+			if w.NUT.URL == "" {
+				w.NUT = nil
+			}
+		}
 		if g := w.Glances; g != nil {
 			g.HasPassword = false
 			g.URL = strings.TrimSpace(g.URL)
@@ -676,6 +692,15 @@ func (c Config) validateWidgets(seen map[string]bool) error {
 }
 
 func validateExtra(w Widget) error {
+	if n := w.NUT; n != nil {
+		if w.Kind == "nut" {
+			return fmt.Errorf("widget %q: a UPS widget already reads a NUT server", w.Name)
+		}
+		u, err := url.Parse(n.URL)
+		if err != nil || u.Scheme != "nut" || u.Host == "" || len(n.URL) > 300 {
+			return fmt.Errorf("widget %q: the UPS address must start with nut://", w.Name)
+		}
+	}
 	g := w.Glances
 	if g == nil {
 		return nil
@@ -727,6 +752,11 @@ func validateRows(w Widget) error {
 				return fmt.Errorf("widget %q has a Glances row but no Glances address", w.Name)
 			}
 			kind = "glances"
+		case "nut":
+			if w.NUT == nil || w.Kind == "nut" {
+				return fmt.Errorf("widget %q has a UPS row but no UPS address", w.Name)
+			}
+			kind = "nut"
 		default:
 			return fmt.Errorf("widget %q has a row with an unknown source %q", w.Name, r.Source)
 		}

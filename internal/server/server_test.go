@@ -1,8 +1,10 @@
 package server
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -489,5 +491,88 @@ func TestTestWidgetCanTestOnlyTheGlancesSource(t *testing.T) {
 	}
 	if w := doJSON(t, h, "POST", "/api/widgets/test", map[string]any{"kind": "proxmox", "only": "glances"}); w.Code != http.StatusBadRequest {
 		t.Fatalf("no Glances address: got %d", w.Code)
+	}
+}
+
+// fakeUPSD answers the three questions the UPS source asks.
+func fakeUPSD(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { l.Close() })
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				sc := bufio.NewScanner(c)
+				for sc.Scan() {
+					switch sc.Text() {
+					case "LIST UPS":
+						_, _ = c.Write([]byte("BEGIN LIST UPS\nUPS myups \"UPS\"\nEND LIST UPS\n"))
+					case "LIST VAR myups":
+						_, _ = c.Write([]byte("BEGIN LIST VAR myups\nVAR myups battery.charge \"87\"\nVAR myups ups.status \"OL\"\nEND LIST VAR myups\n"))
+					case "LIST CLIENT myups":
+						_, _ = c.Write([]byte("BEGIN LIST CLIENT myups\nCLIENT myups 192.168.1.20\nEND LIST CLIENT myups\n"))
+					case "LOGOUT":
+						return
+					}
+				}
+			}()
+		}
+	}()
+	return l.Addr().String()
+}
+
+func TestUPSExtraSourceIsMerged(t *testing.T) {
+	s := newTestServer(t)
+	addr := fakeUPSD(t)
+	h := s.Handler()
+	cfg := s.store.Get().Redacted()
+	cfg.Widgets = []config.Widget{{
+		ID: "w1", Name: "Pi", Kind: "truenas", URL: "https://127.0.0.1:1",
+		NUT:  &config.UPSExtra{URL: "nut://" + addr},
+		Rows: []config.Row{{ID: "r1", Type: "charge", Source: "nut"}, {ID: "r2", Type: "client", Key: "192.168.1.20", Source: "nut", Role: "primary"}}, Refresh: 5, Cols: 1, HeightUnits: 1,
+	}}
+	if w := doJSON(t, h, "PUT", "/api/config", cfg); w.Code != http.StatusOK {
+		t.Fatalf("save: %d %s", w.Code, w.Body.String())
+	}
+	w := doJSON(t, h, "GET", "/api/widgets", nil)
+	var got map[string]struct {
+		Data struct {
+			NUT struct {
+				Vars    map[string]string `json:"vars"`
+				Clients []string          `json:"clients"`
+			} `json:"nut"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if d := got["w1"].Data.NUT; d.Vars["battery.charge"] != "87" || len(d.Clients) != 1 {
+		t.Fatalf("unexpected result: %s", w.Body.String())
+	}
+
+	// The editor can test only the UPS source, without a valid main address.
+	var r struct {
+		OK    bool `json:"ok"`
+		Extra struct {
+			NUT struct {
+				OK      bool   `json:"ok"`
+				Version string `json:"version"`
+			} `json:"nut"`
+		} `json:"extra"`
+	}
+	tw := doJSON(t, h, "POST", "/api/widgets/test", map[string]any{"kind": "glances", "only": "nut", "nut": map[string]any{"url": "nut://" + addr}})
+	if err := json.Unmarshal(tw.Body.Bytes(), &r); err != nil || !r.OK || !r.Extra.NUT.OK || r.Extra.NUT.Version != "myups" {
+		t.Fatalf("test: %d %s", tw.Code, tw.Body.String())
+	}
+	if w := doJSON(t, h, "POST", "/api/widgets/test", map[string]any{"kind": "glances", "only": "nut"}); w.Code != http.StatusBadRequest {
+		t.Fatalf("no UPS address: got %d", w.Code)
 	}
 }

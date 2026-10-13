@@ -89,7 +89,7 @@ export interface Row {
   role?: 'primary' | 'secondary'
   // Where the value comes from: the widget's own source, or its extra Glances source
   // (of a Proxmox cluster, `node` says which node's Glances).
-  source?: 'glances'
+  source?: 'glances' | 'nut'
   node?: string
 }
 
@@ -115,6 +115,8 @@ export interface Widget extends WidgetStyle {
   hasPassword?: boolean
   clearPassword?: boolean
   glances?: Extra
+  // The extra UPS source: a NUT server (nut://host[:port][/ups]), nothing secret.
+  nut?: { url: string }
   rows: Row[]
   refresh: number
   // Size in groups: cols wide, heightUnits high; or, with precise, height in px (0 = fit the content).
@@ -197,6 +199,8 @@ export interface HostData {
   // The extra Glances source of the widget: the general one and one per node.
   glances?: HostData
   glancesNodes?: Record<string, HostData>
+  // The extra UPS source of the widget (same shape as a UPS widget's own data).
+  nut?: HostData
 }
 
 export interface WidgetData {

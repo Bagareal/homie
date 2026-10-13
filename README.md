@@ -71,7 +71,7 @@ A widget is a standalone block, separate from the groups, that shows live number
 - **TrueNAS**: pools, alerts, apps, drive temperatures, CPU, memory, uptime. Guide: [docs/widgets-truenas.md](docs/widgets-truenas.md) (creating a read-only user and an API key, and what to avoid).
 - **UPS (NUT)**: status, battery charge, runtime, load, power, voltage and which machines are connected, each marked primary or secondary. Guide: [docs/widgets-nut.md](docs/widgets-nut.md) (letting `upsd` accept Homie, and naming the clients).
 
-A Proxmox, TrueNAS or UPS widget can also read the same machine's **Glances** (tick "Also read this machine's Glances" in the Source tab): temperatures, disks and network then sit in the same block, one widget per machine. On a cluster, each node can have its own Glances address.
+A Proxmox, TrueNAS or UPS widget can also read the same machine's **Glances** (tick "Also read this machine's Glances" in the Source tab): temperatures, disks and network then sit in the same block, one widget per machine. On a cluster, each node can have its own Glances address. In the same way a Glances, Proxmox or TrueNAS widget can read the machine's **UPS** ("Also read this machine's UPS"), so a machine that runs NUT and does other things too needs one widget only.
 
 Use **Edit → Add widget**, pick the type, fill in the address and press "Test connection": Homie then lists what the host offers (disks, sensors, network cards, pools, drives), so you choose from a menu instead of typing names. Each value is a row you can rename ("HDD esterno" instead of `/mnt/hdd-esterno`), reorder by dragging, or remove. A CPU row can show the load, a temperature, or both side by side (the bar follows the load, or the temperature when it is alone).
 
