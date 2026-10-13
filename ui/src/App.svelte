@@ -5,6 +5,8 @@
   import Settings from './components/Settings.svelte'
   import Toast from './components/Toast.svelte'
   import ConfirmDialog from './components/ConfirmDialog.svelte'
+  import UpdateDialog from './components/UpdateDialog.svelte'
+  import { loadUpdates, updates } from './lib/updates.svelte'
 
   const routeFromHash = () => (location.hash === '#/settings' ? 'settings' : 'dashboard')
   let route = $state(routeFromHash())
@@ -14,7 +16,7 @@
   onMount(() => {
     const onHash = () => (route = routeFromHash())
     window.addEventListener('hashchange', onHash)
-    app.load().catch((e: Error) => (loadError = e.message))
+    app.load().then(() => loadUpdates()).catch((e: Error) => (loadError = e.message))
     return () => window.removeEventListener('hashchange', onHash)
   })
 
@@ -118,6 +120,12 @@
 {#if app.ask}
   {#key app.ask}
     <ConfirmDialog ask={app.ask} />
+  {/key}
+{/if}
+
+{#if updates.dialog}
+  {#key updates.dialog}
+    <UpdateDialog />
   {/key}
 {/if}
 

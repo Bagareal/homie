@@ -5,6 +5,7 @@
   import { cardWidth } from '../lib/widgetSize'
   import { mobile, setTab } from '../lib/mobile.svelte'
   import { isCollapsed, toggleAll } from '../lib/collapse.svelte'
+  import { newer, updates } from '../lib/updates.svelte'
   import { clearDraft, loadDraft, type ItemFields } from '../lib/draft'
   import type { Item, Widget as WidgetT } from '../lib/types'
   import Shelf from './Shelf.svelte'
@@ -79,6 +80,8 @@
   // On a phone the widgets get their own tab so they don't push the services
   // down the page. A search always looks at services.
   // The button that collapses or opens every widget (not on a phone, which has its own tab).
+  // A new version is out: a small dot on Settings, where the details are.
+  const updateReady = $derived(updates.enabled && newer().length > 0)
   const below = $derived(app.config?.settings.widgetCollapseBelow)
   const allCollapsed = $derived(cfg.widgets.length > 0 && cfg.widgets.every((w) => isCollapsed(w.id, below)))
   const tabbed = $derived(mobile.narrow && cfg.widgets.length > 0)
@@ -188,7 +191,7 @@
     <button type="button" class:primary={app.editing} onclick={toggleEdit}>
       {app.editing ? 'Done editing' : 'Edit'}
     </button>
-    <a class="btn" href="#/settings">Settings</a>
+    <a class="btn" href="#/settings" title={updateReady ? `Homie ${newer()[0].version} is available` : undefined}>Settings{#if updateReady}<span class="upd-dot" aria-hidden="true"></span>{/if}</a>
   </nav>
 </header>
 

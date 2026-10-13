@@ -20,6 +20,7 @@ import (
 
 	"github.com/Bagareal/homie/internal/config"
 	"github.com/Bagareal/homie/internal/status"
+	"github.com/Bagareal/homie/internal/updates"
 )
 
 const maxBody = 1 << 20
@@ -44,12 +45,21 @@ type Server struct {
 	version string
 	widgets *widgetCache
 	icons   *iconCache
+	updates *updates.Checker
 	// bgMu keeps the clean-up of background images from racing an upload.
 	bgMu sync.Mutex
 }
 
 func New(store *config.Store, checker *status.Checker, ui fs.FS, dataDir, version string) *Server {
-	return &Server{store: store, checker: checker, ui: ui, dataDir: dataDir, version: version, widgets: newWidgetCache(), icons: newIconCache(dataDir)}
+	return &Server{store: store, checker: checker, ui: ui, dataDir: dataDir, version: version, widgets: newWidgetCache(), icons: newIconCache(dataDir), updates: updates.New("")}
+}
+
+// WithReleasesURL reads the versions from another address than GitHub's (for tests).
+func (s *Server) WithReleasesURL(url string) *Server {
+	if url != "" {
+		s.updates = updates.New(url)
+	}
+	return s
 }
 
 func (s *Server) Handler() http.Handler {
@@ -60,6 +70,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/widgets", s.getWidgets)
 	mux.HandleFunc("POST /api/widgets/test", s.testWidget)
 	mux.HandleFunc("GET /api/version", s.getVersion)
+	mux.HandleFunc("GET /api/releases", s.getReleases)
 	mux.HandleFunc("GET /icons/{name}", s.icon)
 	mux.HandleFunc("GET /cdn/{collection}/{dir}/{file}", s.cdnIcon)
 	mux.HandleFunc("POST /api/background", s.uploadBackground)

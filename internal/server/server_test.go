@@ -576,3 +576,59 @@ func TestUPSExtraSourceIsMerged(t *testing.T) {
 		t.Fatalf("no UPS address: got %d", w.Code)
 	}
 }
+
+func TestReleasesAreReadOnlyWhenTheCheckIsOnAndTheBuildIsReal(t *testing.T) {
+	var calls int
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		_, _ = w.Write([]byte(`[{"tag_name":"v1.2.0","html_url":"https://github.com/x/y/releases/tag/v1.2.0","body":"### Something new","published_at":"2026-10-13T10:00:00Z"}]`))
+	}))
+	defer gh.Close()
+	dir := t.TempDir()
+	store, err := config.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := New(store, status.New(store), nil, dir, "v1.1.0").WithReleasesURL(gh.URL)
+	h := s.Handler()
+	type reply struct {
+		Current  string `json:"current"`
+		Enabled  bool   `json:"enabled"`
+		Releases []struct {
+			Version string `json:"version"`
+			Notes   string `json:"notes"`
+		} `json:"releases"`
+	}
+	get := func() reply {
+		var r reply
+		_ = json.Unmarshal(doJSON(t, h, "GET", "/api/releases", nil).Body.Bytes(), &r)
+		return r
+	}
+	if r := get(); !r.Enabled || r.Current != "v1.1.0" || len(r.Releases) != 1 || r.Releases[0].Version != "v1.2.0" || !strings.Contains(r.Releases[0].Notes, "Something new") {
+		t.Fatalf("unexpected: %+v", r)
+	}
+	get()
+	if calls != 1 {
+		t.Errorf("GitHub was asked %d times, want 1", calls)
+	}
+
+	// Turned off by the user: nothing is asked, nothing is returned.
+	cfg := store.Get().Redacted()
+	cfg.Settings.NoUpdateCheck = true
+	if w := doJSON(t, h, "PUT", "/api/config", cfg); w.Code != http.StatusOK {
+		t.Fatalf("save: %d %s", w.Code, w.Body.String())
+	}
+	if r := get(); r.Enabled || len(r.Releases) != 0 {
+		t.Errorf("the check is off but got %+v", r)
+	}
+
+	// A development build has no version to compare with.
+	dev := New(store, status.New(store), nil, dir, "dev").WithReleasesURL(gh.URL)
+	cfg.Settings.NoUpdateCheck = false
+	_ = store.Set(cfg)
+	var r reply
+	_ = json.Unmarshal(doJSON(t, dev.Handler(), "GET", "/api/releases", nil).Body.Bytes(), &r)
+	if r.Enabled || len(r.Releases) != 0 {
+		t.Errorf("a dev build should not check: %+v", r)
+	}
+}

@@ -52,6 +52,17 @@ export const testWidget = (w: {
     body: JSON.stringify(w),
   })
 
+export interface Release {
+  version: string
+  url: string
+  date: string
+  notes: string
+}
+
+// refresh asks the server to read GitHub again now (it does so at most once a minute).
+export const getReleases = (refresh = false) =>
+  request<{ current: string; enabled: boolean; checkedAt?: string; releases: Release[]; error?: string }>(`api/releases${refresh ? '?refresh=1' : ''}`)
+
 export const getVersion = () => request<{ version: string }>('api/version')
 
 export const uploadBackground = (file: File) => {

@@ -81,6 +81,12 @@ The editor has four tabs (Source, Values, Size, Appearance) with the preview alw
 
 Homie's server reads the hosts, not your browser, so a host only has to be reachable from Homie's container. Each address has a Port field next to it with the default in grey (Glances 61208, Proxmox VE 8006, UPS 3493): leave it empty, or type your own if you changed it. Each address needs its scheme (Glances `http://`, Proxmox VE `https://`, UPS `nut://`), and a name that goes through a reverse proxy usually does not reach the host's own ports: see [Which address to enter](docs/widgets-glances.md#which-address-to-enter). Passwords and API keys are stored only on the server: they are never sent back to the browser, are not included in exported backups, and changing a widget's address or username removes them.
 
+## Updates
+
+Homie tells you when a new version is out. The server asks GitHub, from the container (the same place `update` downloads from; your browser never does), at most every few hours, and a window opens **once per version** with what changed and how to update (run `update` in the Homie container). A small dot on the **Settings** button, and a line in Settings → General, remind you until you have updated. The first time you open Homie after an update, a window shows what changed in the versions you skipped. What each device has already seen is remembered in its browser.
+
+The text comes from the release notes on GitHub, which are built from the commit messages since the previous version (see `scripts/release-notes.sh`, run by the release workflow): the first line of a commit is a change's title and the rest its description. Turn the check off in Settings → General ("Tell me when a new version of Homie is out") if the container should not contact GitHub; it also does nothing in a development build. If GitHub cannot be reached, nothing is shown and nothing breaks.
+
 ## Appearance
 
 The Appearance section in Settings lets you customize:
@@ -115,6 +121,7 @@ The service worker only caches the interface's build files. The dashboard and se
 cmd/homie/              program entry point
 internal/config/        data model, validation, persistence
 internal/status/        periodic service checks
+internal/updates/       finds the released versions on GitHub (new-version window)
 internal/glances/       reads host metrics from the Glances API (widgets)
 internal/truenas/       reads a TrueNAS system over its JSON-RPC WebSocket API (widgets)
 internal/nut/           reads a UPS from a NUT server (widgets)
@@ -147,7 +154,7 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-GitHub Actions builds the interface and the binaries and creates the release with the files `homie-linux-amd64`, `homie-linux-arm64`, and `SHA256SUMS`, which are the ones downloaded by the installer and the updater.
+GitHub Actions builds the interface and the binaries and creates the release with the files `homie-linux-amd64`, `homie-linux-arm64`, and `SHA256SUMS`, which are the ones downloaded by the installer and the updater. The release's text (its changelog) is written from the commit messages since the previous tag by `scripts/release-notes.sh`, and is what Homie shows when a new version is out: write each commit as a first line that works as a title, then a short description of what changed for the user.
 
 ## API
 
@@ -159,6 +166,7 @@ GitHub Actions builds the interface and the binaries and creates the release wit
 | GET | `/api/widgets` | Latest readings of every widget (cached for half the refresh interval) |
 | POST | `/api/widgets/test` | Checks a Glances address from the editor |
 | GET | `/api/version` | Running version |
+| GET | `/api/releases` | Released versions with their notes (read from GitHub by the server, cached for hours; `?refresh=1` asks again, at most once a minute) |
 
 ## Credits
 

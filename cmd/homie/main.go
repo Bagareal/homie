@@ -53,7 +53,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           server.New(store, checker, webui.FS(), dataDir, version).Handler(),
+		Handler:           server.New(store, checker, webui.FS(), dataDir, version).WithReleasesURL(os.Getenv("HOMIE_RELEASES_URL")).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

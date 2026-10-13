@@ -887,3 +887,14 @@ label.check {
     padding-right: 12px;
   }
 }
+
+/* A new version of Homie is out: a dot on the Settings button. */
+.upd-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+}

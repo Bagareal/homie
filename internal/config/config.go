@@ -32,6 +32,8 @@ type Settings struct {
 	// WidgetCollapseBelow collapses the widgets in a window narrower than this
 	// many pixels (0 = never). What each device does by hand is kept in its browser.
 	WidgetCollapseBelow int `json:"widgetCollapseBelow,omitempty"`
+	// NoUpdateCheck turns off asking GitHub whether a new version exists.
+	NoUpdateCheck bool `json:"noUpdateCheck,omitempty"`
 	Appearance
 }
 

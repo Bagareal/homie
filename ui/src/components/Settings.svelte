@@ -8,6 +8,7 @@
   import ColorField from './ColorField.svelte'
   import Slider from './Slider.svelte'
   import { view } from '../lib/collapse.svelte'
+  import { loadUpdates, newer, updates } from '../lib/updates.svelte'
 
   const s = $derived(app.config!.settings)
   // svelte-ignore state_referenced_locally
@@ -19,7 +20,22 @@
 
   onMount(() => {
     api.getVersion().then((v) => (version = v.version)).catch(() => {})
+    if (!updates.loaded) loadUpdates()
   })
+
+  // What Settings says about versions: the reminder that stays until Homie is updated.
+  const fresh = $derived(newer())
+  let checking = $state(false)
+  async function checkNow() {
+    checking = true
+    await loadUpdates(true)
+    checking = false
+  }
+  async function setCheck(on: boolean) {
+    set('noUpdateCheck', !on)
+    await app.save('Settings saved')
+    await loadUpdates(true)
+  }
 
   function set<K extends keyof Settings>(key: K, value: Settings[K]) {
     app.config!.settings[key] = value
@@ -345,6 +361,29 @@
         <input type="checkbox" checked={s.openInNewTab} onchange={(e) => set('openInNewTab', e.currentTarget.checked)} />
         Open services in a new tab
       </label>
+      <label class="check">
+        <input type="checkbox" checked={!s.noUpdateCheck} onchange={(e) => setCheck(e.currentTarget.checked)} />
+        Tell me when a new version of Homie is out
+      </label>
+      {#if !s.noUpdateCheck}
+        <small>
+          {#if !updates.loaded}
+            Checking…
+          {:else if updates.error && fresh.length === 0}
+            Could not check for a new version: {updates.error}
+          {:else if fresh.length > 0}
+            <strong class="update">Homie {fresh[0].version} is available</strong> (you have {updates.current}).
+            <a href={fresh[0].url} target="_blank" rel="noopener noreferrer">What's new</a>. To update, run <code>update</code> in the Homie container.
+          {:else if updates.enabled}
+            Homie {updates.current} is up to date.
+          {:else}
+            This is a development build: updates are not checked.
+          {/if}
+          {#if updates.enabled}
+            <button type="button" class="link" onclick={checkNow} disabled={checking}>{checking ? 'Checking…' : 'Check now'}</button>
+          {/if}
+        </small>
+      {/if}
       <Slider label="Collapse widgets under" unit="px" min={0} max={3000} value={s.widgetCollapseBelow ?? 0} oninput={(v) => preview('widgetCollapseBelow', v)} oncommit={commit} />
       <small>
         Widgets collapse when the window is narrower than this (0 = never). This window is {view.width} px wide. Each widget has a button to collapse it, and the one in the top bar collapses them all; what you choose by hand is remembered on this device. A collapsed widget shows up to four values (choose them in the widget's Values tab).
@@ -368,6 +407,23 @@
 </div>
 
 <style>
+  .update {
+    color: var(--accent);
+  }
+  .link {
+    margin-left: 8px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--accent);
+    font: inherit;
+    cursor: pointer;
+    text-decoration: underline;
+  }
+  .link:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
   .themes {
     display: grid;
     gap: 8px;

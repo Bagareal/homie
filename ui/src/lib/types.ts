@@ -53,6 +53,8 @@ export interface Settings extends Appearance {
   openInNewTab: boolean
   // Widgets collapse in a window narrower than this many px (0 or unset = never).
   widgetCollapseBelow?: number
+  // Do not ask GitHub whether a new version exists.
+  noUpdateCheck?: boolean
 }
 
 // How one widget looks when it differs from the global widget look.
