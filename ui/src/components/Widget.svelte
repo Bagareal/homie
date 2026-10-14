@@ -629,6 +629,16 @@
     <p class="note">Loading…</p>
   {:else if !data.online}
     <p class="note down">Unreachable: {data.error}</p>
+  {:else if folded && mode === 'strip'}
+    <!-- In the strip the chosen values are short rows, so a long value never wraps. -->
+    <dl class="mini">
+      {#each brief as c (c.key)}
+        <div class="mrow" class:bad={c.bad} title={c.title ? `${c.label}: ${c.title}` : c.label}>
+          <dt>{c.label}</dt>
+          <dd>{c.value}</dd>
+        </div>
+      {/each}
+    </dl>
   {:else if folded}
     <div class="brief">
       {#each brief as c (c.key)}
@@ -801,6 +811,37 @@
     opacity: 0.6;
   }
   .cell.bad b {
+    color: var(--down);
+  }
+  .mini {
+    margin: 0;
+    display: grid;
+    gap: 5px;
+  }
+  .mrow {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+    min-width: 0;
+    font-size: 0.8rem;
+  }
+  .mrow dt {
+    flex: 0 1 auto;
+    min-width: 2em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.65;
+  }
+  .mrow dd {
+    margin: 0;
+    flex: 0 0 auto;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .mrow.bad dd {
     color: var(--down);
   }
   .widget.editing {

@@ -280,7 +280,7 @@
     <p class="empty">{tab === 'widgets' ? 'No widgets yet.' : 'No groups yet.'}</p>
   {:else if zoned && arrange.mode === 'strip'}
     <div class="strip-zone" bind:this={zone}>
-      <div class="strip">
+      <div class="strip-row">
         {#each widgetList as w (w.id)}
           <Widget widget={w} mode="strip" data={app.widgetData[w.id]} onedit={() => (widgetEdit = { id: w.id })} onopen={(el) => openPop(w.id, el)} />
         {/each}
