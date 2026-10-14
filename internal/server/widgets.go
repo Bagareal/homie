@@ -114,6 +114,7 @@ func metricsOf(kind string, rows []config.Row) []string {
 				need["mem"], need["info"] = true, true // the installed memory comes from system.info
 			case "pool":
 				need["pools"] = true
+				need["drives"] = r.Temp || need["drives"] // each drive says which pool it belongs to
 			case "drive":
 				need["drives"] = true
 			case "cpu":

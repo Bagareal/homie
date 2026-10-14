@@ -226,6 +226,9 @@ type Row struct {
 	// to each other. The bar follows the load, or the temperature when alone.
 	Load bool `json:"load,omitempty"`
 	Temp bool `json:"temp,omitempty"`
+	// Drive, for a TrueNAS pool row with Temp: the drive whose temperature is
+	// shown next to the capacity (empty = the hottest drive of the pool).
+	Drive string `json:"drive,omitempty"`
 	// Collapsed marks a value shown when the widget is collapsed (up to maxCollapsedRows).
 	Collapsed bool `json:"collapsed,omitempty"`
 	// Source says where the value comes from: empty is the widget's own source,
@@ -786,6 +789,9 @@ func validateRows(w Widget) error {
 		}
 		if len(r.Node) > 100 {
 			return fmt.Errorf("widget %q has a row whose node name is too long", w.Name)
+		}
+		if len(r.Drive) > 100 {
+			return fmt.Errorf("widget %q has a row whose drive name is too long", w.Name)
 		}
 		if len(r.Key) > 200 || len(r.Name) > 60 {
 			return fmt.Errorf("widget %q has a row whose name or key is too long", w.Name)

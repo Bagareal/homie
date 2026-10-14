@@ -536,6 +536,14 @@
     if (!r.load && !r.temp) r[part === 'load' ? 'temp' : 'load'] = true
   }
 
+  // A copy right below, to change what it is about; the custom name and the collapsed
+  // mark are not copied (the name would no longer fit, and only four can be collapsed).
+  function duplicate(i: number) {
+    const { name, collapsed, ...rest } = $state.snapshot(w.rows[i])
+    void [name, collapsed]
+    w.rows.splice(i + 1, 0, { ...rest, id: uid() })
+  }
+
   function move(i: number, to: number) {
     if (to < 0 || to >= w.rows.length || i === to) return
     const [r] = w.rows.splice(i, 1)
@@ -879,6 +887,18 @@
                   <label class="check"><input type="checkbox" checked={r.load} onchange={(e) => setCpu(r, 'load', e.currentTarget.checked)} /> Load</label>
                   <label class="check"><input type="checkbox" checked={r.temp} onchange={(e) => setCpu(r, 'temp', e.currentTarget.checked)} /> Temperature</label>
                 {/if}
+                {#if r.type === 'pool' && !r.source}
+                  <label class="check" title="Show the temperature of a drive of the pool next to its capacity">
+                    <input
+                      type="checkbox"
+                      checked={!!r.temp}
+                      onchange={(e) => {
+                        r.temp = e.currentTarget.checked || undefined
+                        if (!r.temp) r.drive = undefined
+                      }}
+                    /> Temperature
+                  </label>
+                {/if}
                 <label class="check" title="Show this value when the widget is collapsed (up to four)">
                   <input
                     type="checkbox"
@@ -888,6 +908,7 @@
                   /> Collapsed
                 </label>
                 <span class="spacer"></span>
+                <button type="button" class="icon-btn" aria-label="Duplicate" title="Duplicate this value" disabled={w.rows.length >= 30} onclick={() => duplicate(i)}>⧉</button>
                 <button type="button" class="icon-btn" aria-label="Move up" disabled={i === 0} onclick={() => move(i, i - 1)}>▲</button>
                 <button type="button" class="icon-btn" aria-label="Move down" disabled={i === w.rows.length - 1} onclick={() => move(i, i + 1)}>▼</button>
                 <button type="button" class="icon-btn danger" aria-label="Remove" onclick={() => w.rows.splice(i, 1)}>✕</button>
@@ -915,6 +936,14 @@
                   {@render keyOptions(r, 'All disks', (sd?.disks ?? []).map((d) => ({ value: d.mount, label: diskLabel(d) })))}
                 {:else if r.type === 'pool'}
                   {@render keyOptions(r, 'All pools', (found?.pools ?? []).map((p) => ({ value: p.name, label: `${p.name} · ${p.status}` })))}
+                  {#if r.temp && r.key}
+                    <select bind:value={r.drive} aria-label="Drive whose temperature is shown">
+                      <option value={undefined}>Hottest drive of the pool</option>
+                      {#each (found?.drives ?? []).filter((d) => d.pool === r.key) as d (d.name)}
+                        <option value={d.name}>{d.name}{d.model ? ` · ${d.model}` : ''}{d.temp !== undefined ? ` · ${Math.round(d.temp)} °C` : ''}</option>
+                      {/each}
+                    </select>
+                  {/if}
                 {:else if r.type === 'drive'}
                   {@render keyOptions(r, 'Hottest drive', (found?.drives ?? []).map((d) => ({ value: d.name, label: `${d.name}${d.model ? ` · ${d.model}` : ''}${d.temp !== undefined ? ` · ${Math.round(d.temp)} °C` : ''}` })))}
                 {:else if r.type === 'network'}

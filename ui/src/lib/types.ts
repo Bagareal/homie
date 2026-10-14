@@ -89,6 +89,8 @@ export interface Row {
   // cpu rows: the load and/or a temperature, side by side.
   load?: boolean
   temp?: boolean
+  // pool rows (TrueNAS) with `temp`: the drive to read; empty = the hottest of the pool.
+  drive?: string
   // client rows (UPS): what the user says the machine is.
   role?: 'primary' | 'secondary'
   // Shown when the widget is collapsed (up to 4 per widget).

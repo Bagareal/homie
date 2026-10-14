@@ -57,12 +57,14 @@ If you lose it, delete the key and create a new one.
 
 What the rows show:
 
-- **Pool**: one row per pool (or choose one), space used with a bar; if the pool is not ONLINE the row turns red and shows its status. Hover for the last scrub.
+- **Pool**: one row per pool (or choose one), space used with a bar; if the pool is not ONLINE the row turns red and shows its status. Hover for the last scrub. Tick *Temperature* on the row to see a drive's temperature next to the space (`35.9 GB / 928 GB   29 °C`): by default the hottest drive of the pool (hover for all of them), or pick one drive of the pool.
 - **Alerts**: the number of alerts nobody has dismissed, red when serious.
 - **Apps**: running / installed; hover to see which ones are not running.
 - **Hottest drive** (or one drive you pick): temperature. TrueNAS refreshes disk temperatures about every five minutes, so they change slowly.
 - **CPU**: the usage, the temperature, or both side by side (tick *Load* and/or *Temperature* on the row). The temperature is the average of the cores; you can pick a single core instead. A machine without temperature sensors (a virtual machine, for one) shows `n/a`.
 - **Memory, Load average, Uptime, Version.**
+
+To show another pool, drive or core, press the duplicate button (⧉) on a row and change what the copy is about, instead of adding a value from the menu. It works the same in every widget.
 
 ## Where the key is kept
 

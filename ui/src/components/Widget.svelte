@@ -275,14 +275,17 @@
               const scrub = s?.function
                 ? `${s.function === 'SCRUB' ? 'Last scrub' : s.function}: ${(s.state ?? '').toLowerCase()}${s.end ? ` on ${new Date(s.end).toLocaleDateString()}` : ''}, ${s.errors ?? 0} errors`
                 : 'No scrub yet'
+              // The temperature next to the capacity: the drive picked, else the hottest of the pool.
+              const mine = r.temp ? (d.drives ?? []).filter((x) => x.pool === p.name && x.temp !== undefined) : []
+              const drive = mine.find((x) => x.name === r.drive) ?? mine.reduce<(typeof mine)[number] | undefined>((a, x) => (!a || x.temp! > a.temp! ? x : a), undefined)
               out.push({
                 key: `${r.id}:${p.name}`,
                 label: r.key ? r.name || p.name : p.name,
-                value: `${p.healthy ? '' : `${p.status} · `}${bytes(p.used)} / ${bytes(p.total)}`,
+                value: `${p.healthy ? '' : `${p.status} · `}${bytes(p.used)} / ${bytes(p.total)}${drive ? `   ${Math.round(drive.temp!)} °C` : ''}`,
                 pct: p.percent,
                 hot: !p.healthy || p.percent >= 90,
                 bad: !p.healthy,
-                title: `${p.status}. ${scrub}`,
+                title: `${p.status}. ${scrub}${mine.length ? `. Drives: ${mine.map((x) => `${x.name} ${Math.round(x.temp!)} °C`).join(', ')}` : ''}`,
               })
             }
           break

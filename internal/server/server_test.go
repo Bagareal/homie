@@ -647,3 +647,12 @@ func TestMetricsOfForPBS(t *testing.T) {
 		t.Errorf("got %v, want %s", got, want)
 	}
 }
+
+func TestMetricsOfAPoolWithATemperatureReadsTheDrives(t *testing.T) {
+	if got := metricsOf("truenas", []config.Row{{Type: "pool"}}); strings.Join(got, ",") != "pools" {
+		t.Errorf("a pool alone: %v", got)
+	}
+	if got := metricsOf("truenas", []config.Row{{Type: "pool", Temp: true}}); strings.Join(got, ",") != "pools,drives" {
+		t.Errorf("a pool with its temperature: %v", got)
+	}
+}
