@@ -977,7 +977,7 @@
           {/if}
           {#if found?.drives?.length}
             <optgroup label="Detected drives">
-              {#each found.drives as d (d.name)}<option value="drive:{d.name}">{d.name}{d.model ? ` · ${d.model}` : ''}</option>{/each}
+              {#each found.drives as d (d.name)}<option value="drive:{d.name}">{d.name}{d.model ? ` · ${d.model}` : ''}{d.temp !== undefined ? ` · ${Math.round(d.temp)} °C` : ''}</option>{/each}
             </optgroup>
           {/if}
         {:else}
