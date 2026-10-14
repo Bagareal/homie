@@ -38,7 +38,8 @@
     [
       // One group card wide; as tall as its values need unless a height is set.
       '--w-width:var(--card-w)',
-      widget.precise && widget.height > 0 ? `--w-height:${widget.height}px` : '',
+      // (not in the strip, where a tile is as tall as its few values)
+      mode === 'normal' && widget.precise && widget.height > 0 ? `--w-height:${widget.height}px` : '',
       // Only what this widget sets itself; the rest follows the global widget look.
       widget.color ? `--w-color:${widget.color}` : '',
       widget.opacity !== undefined ? `--w-opacity:${widget.opacity}` : '',
@@ -669,6 +670,7 @@
     class="widget editing"
     class:dragging={app.drag?.kind === 'widget' && app.drag.id === widget.id}
     class:vertical
+    class:stripedit={mode === 'strip'}
     class:drop-before={drop === 'before'}
     class:drop-after={drop === 'after'}
     role="button"
@@ -846,6 +848,10 @@
   }
   .widget.editing {
     cursor: grab;
+  }
+  /* The pencil sits in the corner: keep the last value of a strip tile clear of it. */
+  .widget.stripedit {
+    padding-bottom: 30px;
   }
   .widget.dragging {
     opacity: 0.4;

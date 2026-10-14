@@ -6,7 +6,7 @@
   import Toast from './components/Toast.svelte'
   import ConfirmDialog from './components/ConfirmDialog.svelte'
   import UpdateDialog from './components/UpdateDialog.svelte'
-  import { loadUpdates, updates } from './lib/updates.svelte'
+  import { loadUpdates, recheckUpdates, updates } from './lib/updates.svelte'
 
   const routeFromHash = () => (location.hash === '#/settings' ? 'settings' : 'dashboard')
   let route = $state(routeFromHash())
@@ -17,7 +17,14 @@
     const onHash = () => (route = routeFromHash())
     window.addEventListener('hashchange', onHash)
     app.load().then(() => loadUpdates()).catch((e: Error) => (loadError = e.message))
-    return () => window.removeEventListener('hashchange', onHash)
+    const look = () => document.visibilityState === 'visible' && void recheckUpdates()
+    document.addEventListener('visibilitychange', look)
+    const timer = setInterval(look, 30 * 60 * 1000)
+    return () => {
+      window.removeEventListener('hashchange', onHash)
+      document.removeEventListener('visibilitychange', look)
+      clearInterval(timer)
+    }
   })
 
   // Theme, density, title, and custom colors follow the settings.

@@ -956,13 +956,21 @@ label.check {
   }
 }
 
-/* A new version of Homie is out: a dot on the Settings button. */
-.upd-dot {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  margin-left: 7px;
-  border-radius: 50%;
+/* A new version of Homie is out: a button in the top bar until it is installed. */
+.update-pill {
   background: var(--accent);
-  vertical-align: middle;
+  border-color: var(--accent);
+  color: #1a1a1a;
+  font-weight: 700;
+}
+
+.update-pill:hover {
+  background: var(--accent);
+  filter: brightness(1.12);
+}
+
+@media (max-width: 640px) {
+  .update-pill .word {
+    display: none;
+  }
 }

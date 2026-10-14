@@ -22,7 +22,7 @@ import (
 const DefaultURL = "https://api.github.com/repos/Bagareal/homie/releases?per_page=30"
 
 const (
-	okFor      = 6 * time.Hour    // how long a good answer is kept
+	okFor      = 30 * time.Minute // how long a good answer is kept
 	failedFor  = 10 * time.Minute // and a failed one, before trying again
 	forceEvery = time.Minute      // "check now" at most this often
 	maxNotes   = 30000            // bytes of notes kept per release

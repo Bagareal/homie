@@ -237,7 +237,15 @@
     <button type="button" class:primary={app.editing} onclick={toggleEdit}>
       {app.editing ? 'Done editing' : 'Edit'}
     </button>
-    <a class="btn" href="#/settings" title={updateReady ? `Homie ${newer()[0].version} is available` : undefined}>Settings{#if updateReady}<span class="upd-dot" aria-hidden="true"></span>{/if}</a>
+    {#if updateReady}
+      <button
+        type="button"
+        class="update-pill"
+        title="A new version of Homie is out: see what changed and how to update"
+        onclick={() => (updates.dialog = { kind: 'new', releases: newer() })}><span class="word">Update&nbsp;</span>{newer()[0].version}</button
+      >
+    {/if}
+    <a class="btn" href="#/settings">Settings</a>
   </nav>
 </header>
 

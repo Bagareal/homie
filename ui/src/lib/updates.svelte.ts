@@ -38,7 +38,11 @@ export const updates = $state({
 // The releases newer than the one running, newest first.
 export const newer = () => updates.releases.filter((r) => compareVersions(r.version, updates.current) > 0)
 
-export async function loadUpdates(refresh = false) {
+let lastLoad = 0
+
+// `announce`: also decide whether a modal comes up. Only the first look, at load, does:
+// a later look just updates the button in the top bar, it never interrupts what you are doing.
+export async function loadUpdates(refresh = false, announce = !refresh) {
   try {
     const r = await api.getReleases(refresh)
     updates.current = r.current
@@ -46,13 +50,21 @@ export async function loadUpdates(refresh = false) {
     updates.releases = r.releases ?? []
     updates.checkedAt = r.checkedAt ?? ''
     updates.error = r.error ?? ''
+    lastLoad = Date.now()
   } catch {
     // The server did not answer: nothing to announce.
     return
   } finally {
     updates.loaded = true
   }
-  if (!refresh) showNext()
+  if (announce) showNext()
+}
+
+// A page left open (or an installed app in the background) learns about a new version
+// when it is looked at again, or every half hour.
+export async function recheckUpdates() {
+  if (Date.now() - lastLoad < 20 * 60 * 1000) return
+  await loadUpdates(false, false)
 }
 
 // Decides which modal, if any, comes next. Called on load and after one is closed.
