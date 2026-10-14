@@ -722,3 +722,23 @@ func TestWidgetOpacityIsOptionalAndUpgraded(t *testing.T) {
 		t.Errorf("an explicit 100 was lost: %v", again.Widgets[1].Opacity)
 	}
 }
+
+func TestPBSWidgets(t *testing.T) {
+	c := widgetConfig()
+	c.Widgets[0].Kind = "pbs"
+	c.Widgets[0].URL = "https://192.168.1.20:8007"
+	c.Widgets[0].Username = "backup@pbs!homie"
+	c.Widgets[0].Rows = []Row{{ID: "a", Type: "datastore"}, {ID: "b", Type: "group", Key: "tank/vm/101"}, {ID: "c", Type: "cpu"}, {ID: "d", Type: "backup"}, {ID: "e", Type: "tasks"}, {ID: "f", Type: "mem"}}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("a Backup Server widget should validate: %v", err)
+	}
+	c.Widgets[0].Username = "homie"
+	if err := c.Validate(); err == nil {
+		t.Error("a Backup Server token id needs user@realm!name")
+	}
+	c.Widgets[0].Username = "backup@pbs!homie"
+	c.Widgets[0].Rows = []Row{{ID: "a", Type: "lxc"}}
+	if err := c.Validate(); err == nil {
+		t.Error("a Proxmox VE row is not a Backup Server row")
+	}
+}

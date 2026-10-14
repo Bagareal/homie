@@ -85,6 +85,8 @@
     backup: 'Backup',
     quorum: 'Quorum',
     tasks: 'Failed tasks',
+    datastore: 'Datastore',
+    group: 'Backup group',
   }
 
   // ups.status is a list of flags: OL OB LB CHRG DISCHRG RB ...
@@ -173,7 +175,9 @@
       const d: HostData | undefined = fromNUT ? data.data.nut : fromGlances ? (r.node ? data.data.glancesNodes?.[r.node] : data.data.glances) : data.data
       const note = (type: string) =>
         (fromNUT ? data?.notes?.nut : fromGlances ? data?.notes?.[r.node ? `glances:${r.node}` : 'glances'] : undefined) ?? data?.notes?.[type]
-      const na = (): Line => ({ key: r.id, label, value: 'n/a', title: note(r.type === 'mem' ? 'memory' : r.type) })
+      // The reading groups are not always named like the rows: say why a value is missing.
+      const reason = widget.kind === 'pbs' && ['cpu', 'mem', 'uptime'].includes(r.type) ? 'host' : r.type === 'backup' ? 'tasks' : r.type === 'quorum' ? 'cluster' : r.type === 'mem' ? 'memory' : r.type
+      const na = (): Line => ({ key: r.id, label, value: 'n/a', title: note(reason) })
       if (!d) {
         out.push(na())
         continue
@@ -448,6 +452,51 @@
               value: b.status === 'running' ? 'Running' : `${text}${when ? ` · ${when}` : ''}`,
               bad: b.status === 'failed',
               title: [b.node, b.message].filter(Boolean).join(': ') || undefined,
+            })
+          }
+          break
+        }
+        case 'datastore': {
+          const all = d.datastores ?? []
+          const picked = r.key ? all.filter((s) => s.name === r.key) : all
+          if (!picked.length) out.push({ key: r.id, label: r.name || r.key || labels.datastore, value: 'n/a', title: note('usage') })
+          for (const s of picked) {
+            const l = r.key && r.name ? r.name : s.name
+            const key = `${r.id}:${s.name}`
+            if (s.error) out.push({ key, label: l, value: 'error', bad: true, title: s.error })
+            else {
+              const full = s.fullAt ? new Date(s.fullAt) : undefined
+              out.push({
+                key,
+                label: l,
+                value: `${bytes(s.used)} / ${bytes(s.total)}`,
+                pct: s.percent,
+                hot: s.percent >= 90,
+                title: full ? `Expected to be full on ${full.toLocaleDateString()} at the current growth` : undefined,
+              })
+            }
+          }
+          break
+        }
+        case 'group': {
+          if (!d.groups) {
+            out.push({ key: r.id, label: r.name || r.key || labels.group, value: 'n/a', title: note('groups') })
+            break
+          }
+          const picked = r.key ? d.groups.filter((g) => `${g.store}/${g.type}/${g.id}` === r.key) : d.groups
+          if (!picked.length) out.push({ key: r.id, label: r.name || r.key || labels.group, value: r.key ? 'not found' : 'None', title: r.key ? 'No backup group has this name' : 'No backup yet' })
+          const stores = new Set(d.groups.map((g) => g.store)).size
+          for (const g of picked) {
+            const when = ago(g.last)
+            // A group not backed up for two days has probably been forgotten.
+            const stale = !g.last || Date.now() - Date.parse(g.last) > 2 * 86400 * 1000 || Number.isNaN(Date.parse(g.last))
+            const name = `${g.type}/${g.id}${g.comment ? ` · ${g.comment}` : ''}`
+            out.push({
+              key: `${r.id}:${g.store}/${g.type}/${g.id}`,
+              label: r.key && r.name ? r.name : stores > 1 ? `${g.store} · ${name}` : name,
+              value: when || 'never',
+              bad: stale,
+              title: `${g.store}/${g.type}/${g.id}: ${g.count} backup${g.count === 1 ? '' : 's'}${stale ? ' (the latest is more than two days old)' : ''}`,
             })
           }
           break

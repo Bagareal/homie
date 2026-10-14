@@ -13,6 +13,7 @@ import (
 	"github.com/Bagareal/homie/internal/config"
 	"github.com/Bagareal/homie/internal/glances"
 	"github.com/Bagareal/homie/internal/nut"
+	"github.com/Bagareal/homie/internal/pbs"
 	"github.com/Bagareal/homie/internal/proxmox"
 	"github.com/Bagareal/homie/internal/truenas"
 )
@@ -25,6 +26,7 @@ type widgetCache struct {
 	truenas *truenas.Client
 	nut     *nut.Client
 	proxmox *proxmox.Client
+	pbs     *pbs.Client
 	mu      sync.Mutex
 	entries map[string]*widgetEntry
 }
@@ -37,7 +39,7 @@ type widgetEntry struct {
 }
 
 func newWidgetCache() *widgetCache {
-	return &widgetCache{glances: glances.New(), truenas: truenas.New(), nut: nut.New(), proxmox: proxmox.New(), entries: map[string]*widgetEntry{}}
+	return &widgetCache{glances: glances.New(), truenas: truenas.New(), nut: nut.New(), proxmox: proxmox.New(), pbs: pbs.New(), entries: map[string]*widgetEntry{}}
 }
 
 // metricsOf lists which groups of values the rows of a widget need, so a
@@ -45,6 +47,33 @@ func newWidgetCache() *widgetCache {
 func metricsOf(kind string, rows []config.Row) []string {
 	if kind == "nut" {
 		return nil // a UPS is read whole, in one short conversation
+	}
+	if kind == "pbs" {
+		// The version decides whether the server counts as reachable, so it is always
+		// read; the rest only when a row needs it.
+		need := map[string]bool{}
+		for _, r := range rows {
+			if r.Source != "" {
+				continue
+			}
+			switch r.Type {
+			case "datastore":
+				need["usage"] = true
+			case "group":
+				need["groups"], need["usage"] = true, true
+			case "cpu", "mem", "uptime":
+				need["host"] = true
+			case "backup", "tasks":
+				need["tasks"] = true
+			}
+		}
+		var out []string
+		for _, m := range pbs.Metrics {
+			if need[m] {
+				out = append(out, m)
+			}
+		}
+		return out
 	}
 	if kind == "proxmox" {
 		// The cluster resources decide whether the system counts as reachable, so
@@ -131,6 +160,8 @@ func (c *widgetCache) fetchMain(ctx context.Context, w config.Widget) any {
 		return c.truenas.Fetch(ctx, truenas.Target{URL: w.URL, Username: w.Username, APIKey: w.Password, Metrics: metrics})
 	case "proxmox":
 		return c.proxmox.Fetch(ctx, proxmox.Target{URL: w.URL, TokenID: w.Username, Secret: w.Password, Metrics: metrics})
+	case "pbs":
+		return c.pbs.Fetch(ctx, pbs.Target{URL: w.URL, TokenID: w.Username, Secret: w.Password, Metrics: metrics})
 	}
 	return c.glances.Fetch(ctx, glances.Target{URL: w.URL, Username: w.Username, Password: w.Password, Metrics: metrics})
 }
@@ -385,7 +416,7 @@ func (s *Server) testWidget(w http.ResponseWriter, r *http.Request) {
 	}
 	probe := config.Widget{ID: "probe", Name: "probe", Kind: req.Kind, URL: strings.TrimSpace(req.URL), Rows: []config.Row{}}
 	probe.Refresh, probe.Cols, probe.HeightUnits = 5, 1, 1
-	if req.Kind == "proxmox" {
+	if req.Kind == "proxmox" || req.Kind == "pbs" {
 		probe.Username = "probe@pam!probe" // the token id is checked below, with its own message
 	}
 	if err := (config.Config{Settings: config.Default().Settings, Widgets: []config.Widget{probe}}).Validate(); err != nil {
@@ -397,6 +428,8 @@ func (s *Server) testWidget(w http.ResponseWriter, r *http.Request) {
 			msg = "enter a valid address, starting with nut:// (for example nut://192.168.1.10)"
 		case "proxmox":
 			msg = "enter a valid address, starting with https:// (for example https://192.168.1.10:8006)"
+		case "pbs":
+			msg = "enter a valid address, starting with https:// (for example https://192.168.1.10:8007)"
 		}
 		writeError(w, http.StatusBadRequest, msg)
 		return
@@ -447,6 +480,24 @@ func (s *Server) testWidget(w http.ResponseWriter, r *http.Request) {
 		}
 		t.Metrics = truenas.Metrics
 		reply(version, s.widgets.truenas.Fetch(r.Context(), t).Data)
+	case "pbs":
+		if !strings.Contains(req.Username, "@") || !strings.Contains(req.Username, "!") {
+			fail(errors.New("the API token id looks like user@realm!name, for example backup@pbs!homie"))
+			return
+		}
+		t := pbs.Target{URL: probe.URL, TokenID: req.Username, Secret: pw}
+		version, err := s.widgets.pbs.Ping(r.Context(), t)
+		if err != nil {
+			fail(err)
+			return
+		}
+		t.Metrics = pbs.Metrics
+		res := s.widgets.pbs.Fetch(r.Context(), t)
+		if !res.Online {
+			fail(errors.New(res.Error))
+			return
+		}
+		reply("Proxmox Backup Server "+version, res.Data)
 	case "proxmox":
 		if !strings.Contains(req.Username, "@") || !strings.Contains(req.Username, "!") {
 			fail(errors.New("the API token id looks like user@realm!name, for example root@pam!homie"))

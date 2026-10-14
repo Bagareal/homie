@@ -75,8 +75,8 @@ export interface SavedTheme {
   widgets?: Record<string, WidgetStyle>
 }
 
-export type WidgetKind = 'glances' | 'truenas' | 'nut' | 'proxmox'
-export type RowType = 'cpu' | 'mem' | 'swap' | 'load' | 'uptime' | 'temp' | 'disk' | 'network' | 'version' | 'pool' | 'drive' | 'alerts' | 'apps' | 'status' | 'charge' | 'runtime' | 'upsload' | 'power' | 'voltage' | 'model' | 'var' | 'clients' | 'client' | 'nodes' | 'lxc' | 'vm' | 'guest' | 'storage' | 'backup' | 'quorum' | 'tasks'
+export type WidgetKind = 'glances' | 'truenas' | 'nut' | 'proxmox' | 'pbs'
+export type RowType = 'cpu' | 'mem' | 'swap' | 'load' | 'uptime' | 'temp' | 'disk' | 'network' | 'version' | 'pool' | 'drive' | 'alerts' | 'apps' | 'status' | 'charge' | 'runtime' | 'upsload' | 'power' | 'voltage' | 'model' | 'var' | 'clients' | 'client' | 'nodes' | 'lxc' | 'vm' | 'guest' | 'storage' | 'backup' | 'quorum' | 'tasks' | 'datastore' | 'group'
 
 // One line of a widget. `key` picks a disk (mount point), sensor (label),
 // network card, pool or drive (name); empty = all of them, or the CPU sensor /
@@ -202,6 +202,9 @@ export interface HostData {
   storage?: { id: string; node: string; type?: string; shared?: boolean; status?: string; percent: number; used: number; total: number }[]
   backup?: { status: 'ok' | 'warnings' | 'failed' | 'running'; end?: string; node?: string; message?: string }
   tasks?: { failed: number; items?: { type: string; node: string; status: string; end: string }[] }
+  // Proxmox Backup Server only (it also fills cpu, mem, uptime, version, backup and tasks).
+  datastores?: { name: string; error?: string; fullAt?: string; percent: number; used: number; total: number }[]
+  groups?: { store: string; type: string; id: string; comment?: string; last?: string; count: number }[]
   // The extra Glances source of the widget: the general one and one per node.
   glances?: HostData
   glancesNodes?: Record<string, HostData>

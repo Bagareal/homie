@@ -50,10 +50,20 @@
     backup: 'Last backup',
     quorum: 'Cluster quorum',
     tasks: 'Failed tasks',
+    datastore: 'Datastore',
+    group: 'Backup group',
   }
 
   const defaultRows = (kind: WidgetKind): Row[] =>
-    kind === 'proxmox'
+    kind === 'pbs'
+      ? [
+          { id: uid(), type: 'datastore' },
+          { id: uid() + 'b', type: 'backup' },
+          { id: uid() + 't', type: 'tasks' },
+          { id: uid() + 'c', type: 'cpu', load: true },
+          { id: uid() + 'm', type: 'mem' },
+        ]
+      : kind === 'proxmox'
       ? [
           { id: uid(), type: 'cpu', load: true },
           { id: uid() + 'm', type: 'mem' },
@@ -155,7 +165,10 @@
   const nas = $derived(w.kind === 'truenas')
   const ups = $derived(w.kind === 'nut')
   const pve = $derived(w.kind === 'proxmox')
-  const secretName = $derived(nas ? 'API key' : pve ? 'token secret' : 'password')
+  const pbs = $derived(w.kind === 'pbs')
+  // Both Proxmox products log in with an API token.
+  const token = $derived(pve || pbs)
+  const secretName = $derived(nas ? 'API key' : token ? 'token secret' : 'password')
   // Ticked: on save, this widget's look becomes the look of every widget.
   let shareLook = $state(false)
   const global = $derived(app.config!.settings)
@@ -177,14 +190,14 @@
 
   // TrueNAS is only ever reached over https (it revokes API keys sent without TLS).
   // The port each program listens on, used when the address has none (TrueNAS: 443, from https).
-  const DEFAULT_PORT: Record<WidgetKind, string> = { glances: '61208', proxmox: '8006', truenas: '', nut: '3493' }
+  const DEFAULT_PORT: Record<WidgetKind, string> = { glances: '61208', proxmox: '8006', pbs: '8007', truenas: '', nut: '3493' }
   const defaultPort = $derived(DEFAULT_PORT[w.kind])
 
   function normalizeUrl(raw: string): string {
     const v = raw.trim()
-    const full = v && !/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? `${w.kind === 'truenas' || w.kind === 'proxmox' ? 'https' : w.kind === 'nut' ? 'nut' : 'http'}://${v}` : v
-    // Proxmox VE only speaks https: a typed http:// would just be redirected.
-    return withDefaultPort(w.kind === 'proxmox' ? full.replace(/^http:\/\//i, 'https://') : full, DEFAULT_PORT[w.kind])
+    const full = v && !/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? `${w.kind === 'truenas' || w.kind === 'proxmox' || w.kind === 'pbs' ? 'https' : w.kind === 'nut' ? 'nut' : 'http'}://${v}` : v
+    // Proxmox VE and Backup Server only speak https: a typed http:// would just be redirected.
+    return withDefaultPort(w.kind === 'proxmox' || w.kind === 'pbs' ? full.replace(/^http:\/\//i, 'https://') : full, DEFAULT_PORT[w.kind])
   }
 
   // What the editor previews until the host has been read.
@@ -267,7 +280,27 @@
       glances: { temp: { label: 'Package id 0', value: 48 }, sensors: [{ label: 'Package id 0', value: 48 }] },
     },
   }
-  const sample = $derived(pve ? samplePVE : ups ? sampleUPS : nas ? sampleNAS : sampleGlances)
+  const samplePBS: WidgetData = {
+    online: true,
+    updatedAt: '',
+    data: {
+      version: '3.2-1',
+      cpu: 6,
+      mem: { percent: 31, used: 2.5 * 2 ** 30, total: 8 * 2 ** 30 },
+      uptime: '34 days, 2:10:45',
+      datastores: [
+        { name: 'tank', percent: 41, used: 4.1 * 2 ** 40, total: 10 * 2 ** 40 },
+        { name: 'offsite', percent: 92, used: 1.84 * 2 ** 40, total: 2 * 2 ** 40 },
+      ],
+      groups: [
+        { store: 'tank', type: 'vm', id: '200', comment: 'nas', last: new Date(Date.now() - 6 * 3600 * 1000).toISOString(), count: 14 },
+        { store: 'tank', type: 'ct', id: '100', comment: 'web', last: new Date(Date.now() - 6 * 3600 * 1000).toISOString(), count: 21 },
+      ],
+      backup: { status: 'ok', end: new Date(Date.now() - 6 * 3600 * 1000).toISOString(), node: 'tank:ct/100' },
+      tasks: { failed: 0 },
+    },
+  }
+  const sample = $derived(pbs ? samplePBS : pve ? samplePVE : ups ? sampleUPS : nas ? sampleNAS : sampleGlances)
   const live = $derived(widgetId ? app.widgetData[widgetId] : undefined)
   const previewData = $derived<WidgetData>(
     found
@@ -344,7 +377,7 @@
       }
       if (r.ok) {
         found = r.data ?? null
-        testResult = { ok: true, text: `Connected${r.version ? ` (${ups ? 'UPS: ' : nas || pve ? '' : 'Glances '}${r.version})` : ''}` }
+        testResult = { ok: true, text: `Connected${r.version ? ` (${ups ? 'UPS: ' : nas || token ? '' : 'Glances '}${r.version})` : ''}` }
       } else if (!silent) testResult = { ok: false, text: r.error ?? 'Failed' }
     } catch (e) {
       if (!silent) testResult = { ok: false, text: (e as Error).message }
@@ -525,8 +558,8 @@
     try {
       const u = new URL(url)
       if (ups ? u.protocol !== 'nut:' : u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error()
-      if (pve && !(w.username ?? '').includes('@')) return fail('source', 'The API token ID looks like user@realm!name, for example root@pam!homie.')
-      if (pve && !(w.username ?? '').includes('!')) return fail('source', 'The API token ID looks like user@realm!name, for example root@pam!homie.')
+      if (token && !(w.username ?? '').includes('@')) return fail('source', `The API token ID looks like user@realm!name, for example ${pbs ? 'backup@pbs!homie' : 'root@pam!homie'}.`)
+      if (token && !(w.username ?? '').includes('!')) return fail('source', `The API token ID looks like user@realm!name, for example ${pbs ? 'backup@pbs!homie' : 'root@pam!homie'}.`)
       if (nas && u.protocol !== 'https:') return fail('source', 'A TrueNAS address must start with https:// (TrueNAS revokes an API key sent over plain http).')
     } catch {
       return fail('source', `Enter a valid address, for example ${ups ? 'nut://192.168.1.10' : nas ? 'https://truenas.local' : 'http://192.168.1.10:61208'}.`)
@@ -658,6 +691,7 @@
           Type
           <select value={w.kind} onchange={(e) => setKind(e.currentTarget.value as WidgetKind)}>
             <option value="proxmox">Proxmox VE (a node or a cluster)</option>
+            <option value="pbs">Proxmox Backup Server</option>
             <option value="glances">Glances (any Linux host)</option>
             <option value="truenas">TrueNAS (25.04 or later)</option>
             <option value="nut">UPS (NUT server)</option>
@@ -667,13 +701,15 @@
       <label>
         Name
         <!-- svelte-ignore a11y_autofocus -->
-        <input bind:value={w.name} maxlength="60" placeholder={ups ? 'UPS' : nas ? 'TrueNAS' : pve ? 'Proxmox' : 'Server'} autofocus />
+        <input bind:value={w.name} maxlength="60" placeholder={ups ? 'UPS' : nas ? 'TrueNAS' : pve ? 'Proxmox' : pbs ? 'Backups' : 'Server'} autofocus />
       </label>
       <label>
-        {ups ? 'NUT server address' : nas ? 'TrueNAS address' : pve ? 'Proxmox VE address' : 'Glances address'}
-        <AddressInput bind:value={w.url} placeholder={ups ? 'nut://192.168.1.10' : nas ? 'https://truenas.local' : pve ? 'https://192.168.1.10' : 'http://192.168.1.10'} port={defaultPort || '443'} />
+        {ups ? 'NUT server address' : nas ? 'TrueNAS address' : pve ? 'Proxmox VE address' : pbs ? 'Backup Server address' : 'Glances address'}
+        <AddressInput bind:value={w.url} placeholder={ups ? 'nut://192.168.1.10' : nas ? 'https://truenas.local' : token ? 'https://192.168.1.10' : 'http://192.168.1.10'} port={defaultPort || '443'} />
         {#if pve}
           <small>Any node of the cluster (or the single node), port 8006: it answers for the whole cluster. The certificate is not checked, so Proxmox's own self-signed one works.</small>
+        {:else if pbs}
+          <small>The Backup Server itself, port 8007. The certificate is not checked, so its own self-signed one works.</small>
         {:else if ups}
           <small>The machine running <code>upsd</code>, as <code>nut://host</code> (port 3493) or <code>nut://host:port</code>. With more than one UPS add its name, <code>nut://host/myups</code>; otherwise the first one is used. Reading needs no password.</small>
         {:else if nas}
@@ -685,11 +721,11 @@
       {#if !ups}
       <div class="two">
         <label>
-          {pve ? 'API token ID' : 'Username'} <small>{pve ? '' : nas ? '(only if the login is refused)' : '(optional)'}</small>
-          <input bind:value={w.username} maxlength="100" autocomplete="off" placeholder={pve ? 'root@pam!homie' : ''} />
+          {token ? 'API token ID' : 'Username'} <small>{token ? '' : nas ? '(only if the login is refused)' : '(optional)'}</small>
+          <input bind:value={w.username} maxlength="100" autocomplete="off" placeholder={pbs ? 'backup@pbs!homie' : pve ? 'root@pam!homie' : ''} />
         </label>
         <label>
-          {nas ? 'API key' : pve ? 'API token secret' : 'Password'} {#if !nas && !pve}<small>(optional)</small>{/if}
+          {nas ? 'API key' : token ? 'API token secret' : 'Password'} {#if !nas && !token}<small>(optional)</small>{/if}
           <input
             type="password"
             bind:value={w.password}
@@ -702,13 +738,15 @@
       {/if}
       {#if saved?.hasPassword && !ups}
         {#if addressChanged}
-          <small>Changing the address or {pve ? 'token ID' : 'username'} removes the saved {secretName}: enter it again if the host needs one.</small>
+          <small>Changing the address or {token ? 'token ID' : 'username'} removes the saved {secretName}: enter it again if the host needs one.</small>
         {:else}
           <label class="check"><input type="checkbox" bind:checked={w.clearPassword} /> Remove the saved {secretName}</label>
         {/if}
       {/if}
       {#if pve}
         <small>Create the token in Proxmox: Datacenter → Permissions → API Tokens → Add, for a user that has only the <code>PVEAuditor</code> role on <code>/</code> (with “Privilege Separation” on, give the role to the token itself too). The secret is shown once; it is stored on the Homie server and never sent back to the browser.</small>
+      {:else if pbs}
+        <small>Create the token in Proxmox Backup Server: Configuration → Access Control → API Token → Add, then under Permissions give the user <b>and</b> the token the <code>DatastoreAudit</code> role on <code>/datastore</code> and the <code>Audit</code> role on <code>/system</code>. The secret is shown once; it is stored on the Homie server and never sent back to the browser.</small>
       {:else if ups}
         <small>The server must accept connections from the Homie machine: set <code>LISTEN 0.0.0.0 3493</code> in <code>upsd.conf</code> and allow the port in the firewall.</small>
       {:else if nas}
@@ -717,7 +755,7 @@
         <small>Glances only supports basic authentication, which is sent unencrypted over plain http. Use it on a trusted network.</small>
       {/if}
       <div class="test">
-        <button type="button" onclick={() => test()} disabled={testing}>{testing ? 'Testing…' : w.glances ? `Test ${pve ? 'Proxmox' : nas ? 'TrueNAS' : 'UPS'} connection` : 'Test connection'}</button>
+        <button type="button" onclick={() => test()} disabled={testing}>{testing ? 'Testing…' : w.glances ? `Test ${pbs ? 'Backup Server' : pve ? 'Proxmox' : nas ? 'TrueNAS' : 'UPS'} connection` : 'Test connection'}</button>
         {#if testResult}<span class:ok={testResult.ok} class:bad={!testResult.ok} role="status">{testResult.text}</span>{/if}
       </div>
       {#if w.kind !== 'glances'}
@@ -801,7 +839,7 @@
     </fieldset>
     {:else if tab === 'values'}
     <fieldset>
-      <small>Tick “Collapsed” on up to four values to show only those when the widget is collapsed (none ticked: the first four). Drag to reorder (or use the arrows). {pve ? 'Guests, storages and nodes' : ups ? 'Clients and other values' : nas ? 'Pools and drives' : 'Disks, sensors and network cards'} can be chosen once the connection has been tested.</small>
+      <small>Tick “Collapsed” on up to four values to show only those when the widget is collapsed (none ticked: the first four). Drag to reorder (or use the arrows). {pbs ? 'Datastores and backup groups' : pve ? 'Guests, storages and nodes' : ups ? 'Clients and other values' : nas ? 'Pools and drives' : 'Disks, sensors and network cards'} can be chosen once the connection has been tested.</small>
       <ul class="rows">
         {#each w.rows as r, i (r.id)}
           {@const sd = srcData(r)}
@@ -837,7 +875,7 @@
               <div class="rhead">
                 <strong>{typeLabels[r.type]}</strong>
                 {#if r.source === 'glances'}<span class="tag">Glances{r.node ? ` · ${r.node}` : ''}</span>{:else if r.source === 'nut'}<span class="tag">UPS</span>{/if}
-                {#if r.type === 'cpu' && !(pve && !r.source)}
+                {#if r.type === 'cpu' && !(token && !r.source)}
                   <label class="check"><input type="checkbox" checked={r.load} onchange={(e) => setCpu(r, 'load', e.currentTarget.checked)} /> Load</label>
                   <label class="check"><input type="checkbox" checked={r.temp} onchange={(e) => setCpu(r, 'temp', e.currentTarget.checked)} /> Temperature</label>
                 {/if}
@@ -865,6 +903,10 @@
                   ])}
                 {:else if r.type === 'guest'}
                   {@render keyOptions(r, 'Pick one…', (found?.guests ?? []).filter((g) => !g.template).map((g) => ({ value: String(g.id), label: `${g.id} · ${g.name} (${g.type === 'lxc' ? 'LXC' : 'VM'}, ${g.node})` })))}
+                {:else if r.type === 'datastore'}
+                  {@render keyOptions(r, 'All datastores', (found?.datastores ?? []).map((s) => ({ value: s.name, label: s.error ? `${s.name} · error` : `${s.name} · ${bytes(s.used)} of ${bytes(s.total)}` })))}
+                {:else if r.type === 'group'}
+                  {@render keyOptions(r, 'All backup groups', (found?.groups ?? []).map((g) => ({ value: `${g.store}/${g.type}/${g.id}`, label: `${g.store}/${g.type}/${g.id}${g.comment ? ` · ${g.comment}` : ''}` })))}
                 {:else if r.type === 'storage'}
                   {@render keyOptions(r, 'All storages', storeIds.map((s) => ({ value: s, label: s })))}
                 {:else if r.type === 'temp' || (r.type === 'cpu' && r.temp)}
@@ -917,7 +959,26 @@
         }}
       >
         <option value="">+ Add a value…</option>
-        {#if pve}
+        {#if pbs}
+          <option value="datastore">All datastores</option>
+          <option value="group">All backup groups (last backup)</option>
+          <option value="backup">Last backup</option>
+          <option value="tasks">Failed tasks (24 h)</option>
+          <option value="cpu">CPU</option>
+          <option value="mem">Memory</option>
+          <option value="uptime">Uptime</option>
+          <option value="version">Backup Server version</option>
+          {#if found?.datastores?.length}
+            <optgroup label="Detected datastores">
+              {#each found.datastores as s (s.name)}<option value="datastore:{s.name}">{s.name}</option>{/each}
+            </optgroup>
+          {/if}
+          {#if found?.groups?.length}
+            <optgroup label="Detected backup groups">
+              {#each found.groups as g (`${g.store}/${g.type}/${g.id}`)}<option value="group:{g.store}/{g.type}/{g.id}">{g.store}/{g.type}/{g.id}{g.comment ? ` · ${g.comment}` : ''}</option>{/each}
+            </optgroup>
+          {/if}
+        {:else if pve}
           <option value="nodes">Nodes (state, CPU, memory)</option>
           <option value="cpu">CPU</option>
           <option value="mem">Memory</option>

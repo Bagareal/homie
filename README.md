@@ -68,6 +68,7 @@ A widget is a standalone block, separate from the groups, that shows live number
 
 - **Glances**: CPU, memory, swap, load, uptime, temperatures, disks and network traffic of any Linux host (a Proxmox node, for example). Guide: [docs/widgets-glances.md](docs/widgets-glances.md) (installing Glances and keeping it running).
 - **Proxmox VE**: LXC and VM counts, single guests, nodes, storages, last backup, cluster quorum and failed tasks, for one node or a whole cluster. Guide: [docs/widgets-proxmox.md](docs/widgets-proxmox.md) (creating a read-only API token).
+- **Proxmox Backup Server**: datastore space, how long ago each VM/container was last backed up, the latest backup, failed tasks and the server's load. Guide: [docs/widgets-pbs.md](docs/widgets-pbs.md).
 - **TrueNAS**: pools, alerts, apps, drive temperatures, CPU, memory, uptime. Guide: [docs/widgets-truenas.md](docs/widgets-truenas.md) (creating a read-only user and an API key, and what to avoid).
 - **UPS (NUT)**: status, battery charge, runtime, load, power, voltage and which machines are connected, each marked primary or secondary. Guide: [docs/widgets-nut.md](docs/widgets-nut.md) (letting `upsd` accept Homie, and naming the clients).
 

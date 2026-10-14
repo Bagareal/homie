@@ -131,9 +131,10 @@ type Group struct {
 type Widget struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
-	// Kind is the data source: "glances", "truenas", "proxmox" or "nut" (a UPS;
-	// its URL is nut://host[:port][/ups]). For Proxmox VE, Username is the API
-	// token id (user@realm!name) and Password its secret.
+	// Kind is the data source: "glances", "truenas", "proxmox", "pbs" (Proxmox
+	// Backup Server) or "nut" (a UPS; its URL is nut://host[:port][/ups]). For
+	// Proxmox VE and Backup Server, Username is the API token id (user@realm!name)
+	// and Password its secret.
 	Kind     string `json:"kind"`
 	URL      string `json:"url"`
 	Username string `json:"username,omitempty"`
@@ -251,6 +252,7 @@ var RowTypes = map[string][]string{
 	"glances": {"cpu", "mem", "swap", "load", "uptime", "temp", "disk", "network"},
 	"truenas": {"cpu", "mem", "load", "uptime", "version", "pool", "drive", "alerts", "apps"},
 	"proxmox": {"cpu", "mem", "uptime", "version", "nodes", "lxc", "vm", "guest", "storage", "backup", "quorum", "tasks"},
+	"pbs":     {"cpu", "mem", "uptime", "version", "datastore", "group", "backup", "tasks"},
 	"nut":     {"status", "charge", "runtime", "upsload", "power", "voltage", "model", "var", "clients", "client"},
 }
 
@@ -675,7 +677,7 @@ func (c Config) validateWidgets(seen map[string]bool) error {
 		if len(w.Username) > 100 || len(w.Password) > 200 {
 			return fmt.Errorf("username or password of widget %q is too long", w.Name)
 		}
-		if w.Kind == "proxmox" && !(strings.Contains(w.Username, "@") && strings.Contains(w.Username, "!")) {
+		if (w.Kind == "proxmox" || w.Kind == "pbs") && !(strings.Contains(w.Username, "@") && strings.Contains(w.Username, "!")) {
 			return fmt.Errorf("widget %q: the Proxmox API token id looks like user@realm!name", w.Name)
 		}
 		if err := validateExtra(w); err != nil {
@@ -794,8 +796,8 @@ func validateRows(w Widget) error {
 		if r.Type == "client" && r.Key == "" {
 			return fmt.Errorf("widget %q: a client needs its address", w.Name)
 		}
-		// A Proxmox node's CPU row has no temperature: that comes from Glances.
-		if r.Type == "cpu" && !r.Load && !r.Temp && !(w.Kind == "proxmox" && r.Source == "") {
+		// A Proxmox node's (or a Backup Server's) CPU row has no temperature: that comes from Glances.
+		if r.Type == "cpu" && !r.Load && !r.Temp && !((w.Kind == "proxmox" || w.Kind == "pbs") && r.Source == "") {
 			return fmt.Errorf("widget %q: a CPU row must show the load, the temperature, or both", w.Name)
 		}
 	}

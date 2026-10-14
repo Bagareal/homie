@@ -632,3 +632,18 @@ func TestReleasesAreReadOnlyWhenTheCheckIsOnAndTheBuildIsReal(t *testing.T) {
 		t.Errorf("a dev build should not check: %+v", r)
 	}
 }
+
+func TestMetricsOfForPBS(t *testing.T) {
+	// Only the version is always read.
+	if got := metricsOf("pbs", []config.Row{{Type: "version"}}); len(got) != 0 {
+		t.Errorf("version alone: %v", got)
+	}
+	got := metricsOf("pbs", []config.Row{{Type: "group"}, {Type: "cpu"}, {Type: "backup"}, {Type: "uptime", Source: "glances"}})
+	if want := "usage,groups,host,tasks"; strings.Join(got, ",") != want {
+		t.Errorf("got %v, want %s", got, want)
+	}
+	got = metricsOf("pbs", []config.Row{{Type: "datastore"}})
+	if want := "usage"; strings.Join(got, ",") != want {
+		t.Errorf("got %v, want %s", got, want)
+	}
+}
