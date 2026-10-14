@@ -451,7 +451,8 @@ func readDrives(c *wsConn) ([]Drive, error) {
 		Model *string `json:"model"`
 		Pool  *string `json:"pool"`
 	}
-	opts := map[string]any{"select": []string{"name", "model", "pool"}}
+	// TrueNAS leaves "pool" empty unless the pools are asked for.
+	opts := map[string]any{"select": []string{"name", "model", "pool"}, "extra": map[string]any{"pools": true}}
 	if err := c.call("disk.query", []any{[]any{}, opts}, &disks); err != nil {
 		return nil, err
 	}

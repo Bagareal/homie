@@ -122,6 +122,10 @@ func (f *fakeNAS) answer(method string, params json.RawMessage) string {
 		return `"result":` + map[bool]string{true: "true", false: "false"}[len(p) == 1 && p[0] == f.key]
 	}
 	if res, ok := f.results[method]; ok {
+		// Like the real one: a disk's pool is only filled in when the pools are asked for.
+		if method == "disk.query" && !strings.Contains(string(params), `"pools":true`) {
+			res = strings.ReplaceAll(res, `"pool":"tank"`, `"pool":null`)
+		}
 		if res == "ERR" {
 			return `"error":{"code":-32001,"message":"Not authorized"}`
 		}
@@ -253,6 +257,9 @@ func TestFetchReadsEverything(t *testing.T) {
 	}
 	if d.Pools[0].Name != "boot-pool" || d.Pools[0].Healthy || d.Pools[0].Scan != nil {
 		t.Errorf("degraded pool = %+v", d.Pools[0])
+	}
+	if len(d.Drives) == 2 && d.Drives[1].Pool != "tank" {
+		t.Errorf("the pool of a drive is not read: %+v", d.Drives[1])
 	}
 	if len(d.Drives) != 2 || d.Drives[1].Name != "sda" || d.Drives[1].Temp == nil || *d.Drives[1].Temp != 38 || d.Drives[0].Temp != nil {
 		t.Errorf("drives = %+v", d.Drives)
