@@ -3,6 +3,8 @@
   import { app } from '../lib/state.svelte'
   import { barHeight } from '../lib/barHeight'
   import { cardWidth } from '../lib/widgetSize'
+  import { arrange } from '../lib/arrange.svelte'
+  import { masonry } from '../lib/masonry'
   import { mobile, setTab } from '../lib/mobile.svelte'
   import { isCollapsed, toggleAll } from '../lib/collapse.svelte'
   import { newer, updates } from '../lib/updates.svelte'
@@ -19,6 +21,9 @@
   let widgetEdit = $state<{ id: string | null } | null>(null)
   let search: HTMLInputElement | undefined = $state()
   let main: HTMLElement | undefined = $state()
+  // Strip layout: the widget whose full view is open, and where it sits in the strip zone.
+  let zone: HTMLElement | undefined = $state()
+  let pop = $state<{ id: string; left: number; top: number } | null>(null)
 
   // A draft left behind by a refresh or a closed tab: offer to pick it back up.
   onMount(async () => {
@@ -56,9 +61,9 @@
       .filter((v) => !q || v.items.length > 0),
   )
 
-  // Groups and widgets in the order the user arranged them. In the list layout
-  // neighbouring widgets share a row; in the grid they flow like the cards.
-  type Block = { kind: 'group'; v: (typeof visible)[number] } | { kind: 'widget'; w: WidgetT } | { kind: 'strip'; list: WidgetT[] }
+  // Groups and widgets in the order the user arranged them.
+  type Block = { kind: 'group'; v: (typeof visible)[number] } | { kind: 'widget'; w: WidgetT }
+  type GroupBlock = Extract<Block, { kind: 'group' }>
   const blocks = $derived.by(() => {
     const byId = new Map(visible.map((v) => [v.group.id, v]))
     const out: Block[] = []
@@ -69,11 +74,7 @@
         continue
       }
       const w = q ? undefined : cfg.widgets.find((x) => x.id === id)
-      if (!w) continue
-      const last = out[out.length - 1]
-      if (cfg.settings.layout === 'grid') out.push({ kind: 'widget', w })
-      else if (last?.kind === 'strip') last.list.push(w)
-      else out.push({ kind: 'strip', list: [w] })
+      if (w) out.push({ kind: 'widget', w })
     }
     return out
   })
@@ -87,7 +88,34 @@
   const tabbed = $derived(mobile.narrow && cfg.widgets.length > 0)
   const tab = $derived(!tabbed ? 'all' : q ? 'services' : mobile.tab)
   const shown = $derived(tab === 'all' ? blocks : blocks.filter((b) => (b.kind === 'group') === (tab === 'services')))
-  const blockKey = (b: Block) => (b.kind === 'group' ? `g${b.v.group.id}` : b.kind === 'widget' ? `w${b.w.id}` : `s${b.list[0].id}`)
+  const blockKey = (b: Block) => (b.kind === 'group' ? `g${b.v.group.id}` : `w${b.w.id}`)
+
+  // The column and strip layouts keep the widgets apart from the groups. A phone has
+  // its tabs for that, and a search hides the widgets.
+  const widgetList = $derived(shown.flatMap((b) => (b.kind === 'widget' ? [b.w] : [])))
+  const groupList = $derived(shown.filter((b): b is GroupBlock => b.kind === 'group'))
+  const zoned = $derived(!tabbed && widgetList.length > 0 && arrange.mode !== 'masonry')
+  const arrangement = $derived(zoned ? (arrange.mode === 'column' ? 'split' : 'stripmode') : arrange.mode === 'masonry' ? 'masonry' : 'plain')
+  const popWidget = $derived(pop ? widgetList.find((x) => x.id === pop!.id) : undefined)
+
+  function openPop(id: string, el: HTMLElement) {
+    if (pop?.id === id || !zone) {
+      pop = null
+      return
+    }
+    const z = zone.getBoundingClientRect()
+    const r = el.getBoundingClientRect()
+    const width = cardWidth()
+    pop = { id, left: Math.max(0, Math.min(r.left - z.left, z.width - width)), top: r.bottom - z.top + 6 }
+  }
+  // Anything that rearranges the page closes it.
+  $effect(() => {
+    void [arrange.mode, app.editing, app.query]
+    pop = null
+  })
+  function onWindowPointer(e: PointerEvent) {
+    if (pop && !(e.target as HTMLElement).closest('.pop, .widget.strip')) pop = null
+  }
 
   const summary = $derived.by(() => {
     let up = 0
@@ -109,13 +137,14 @@
   // keeps a compact block and a narrower one drops to two columns, then one.
   const MAX_COLS = 3
   let cols = $state(MAX_COLS)
+  // The groups of the column layout leave one column to the widgets.
+  const gcols = $derived(zoned && arrange.mode === 'column' ? Math.max(1, cols - 1) : cols)
   $effect(() => {
-    void [cfg.settings.layout, cfg.groups.length, cfg.widgets.length, app.query, app.editing]
+    void [arrange.mode, zoned, cfg.groups.length, cfg.widgets.length, app.query, app.editing]
     const el = main
     const host = el?.parentElement
     if (!el || !host) return
     const fit = () => {
-      if (cfg.settings.layout !== 'grid') return el.style.removeProperty('width')
       const cs = getComputedStyle(el)
       const gap = parseFloat(cs.columnGap) || 20
       const pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight)
@@ -123,7 +152,7 @@
       const card = cardWidth()
       const fits = Math.max(1, Math.floor((host.clientWidth - pad + gap) / (card + gap)))
       const widgets = app.query ? [] : cfg.widgets
-      const wanted = Math.max(1, visible.length + widgets.length, ...widgets.map((w) => w.cols))
+      const wanted = Math.max(1, zoned && arrange.mode === 'column' ? 1 + visible.length : visible.length + widgets.length)
       cols = Math.min(fits, wanted, MAX_COLS)
       el.style.setProperty('--cols', String(cols))
       // Never wider than the screen: on a narrow phone the tiles wrap instead.
@@ -136,6 +165,10 @@
   })
 
   function onWindowKey(e: KeyboardEvent) {
+    if (e.key === 'Escape' && pop) {
+      pop = null
+      return
+    }
     if (app.editing || itemEdit || groupEdit || widgetEdit) return
     const t = e.target as HTMLElement
     if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName)) {
@@ -158,7 +191,20 @@
   }
 </script>
 
-<svelte:window onkeydown={onWindowKey} />
+<svelte:window onkeydown={onWindowKey} onpointerdown={onWindowPointer} />
+
+{#snippet shelf(b: GroupBlock)}
+  <Shelf
+    group={b.v.group}
+    items={b.v.items}
+    onEditItem={(item) => (itemEdit = { groupId: b.v.group.id, item })}
+    onAddItem={() => (itemEdit = { groupId: b.v.group.id, item: null })}
+    onEditGroup={() => (groupEdit = { id: b.v.group.id })}
+  />
+{/snippet}
+{#snippet widgetOf(w: WidgetT)}
+  <Widget widget={w} data={app.widgetData[w.id]} onedit={() => (widgetEdit = { id: w.id })} />
+{/snippet}
 
 <header class="bar" use:barHeight>
   <h1>{cfg.title || 'Homie'}</h1>
@@ -177,7 +223,7 @@
     <p class="summary" class:alert={anyDown}>{summary}</p>
   {/if}
   <nav class="actions">
-    {#if cfg.widgets.length > 0 && !app.editing && !mobile.narrow}
+    {#if cfg.widgets.length > 0 && !app.editing && !mobile.narrow && arrange.mode !== 'strip'}
       <button type="button" onclick={() => toggleAll(cfg.widgets.map((w) => w.id), below)}>{allCollapsed ? 'Expand widgets' : 'Collapse widgets'}</button>
     {/if}
     {#if app.editing}
@@ -207,7 +253,15 @@
 {/if}
 
 
-<main class="shelves" class:editing={app.editing} bind:this={main}>
+<main
+  class="shelves {arrangement}"
+  class:right={arrange.right}
+  class:one={cols === 1}
+  class:editing={app.editing}
+  style:--gcols={gcols}
+  bind:this={main}
+  use:masonry={{ on: arrangement === 'masonry', cols }}
+>
   {#if cfg.groups.length === 0 && cfg.widgets.length === 0}
     <div class="empty">
       <p>The dashboard is empty. Create a group, then add your services to it.</p>
@@ -224,25 +278,30 @@
     <p class="empty">No service matches “{app.query}”.</p>
   {:else if shown.length === 0}
     <p class="empty">{tab === 'widgets' ? 'No widgets yet.' : 'No groups yet.'}</p>
-  {:else}
-    {#each shown as b (blockKey(b))}
-      {#if b.kind === 'group'}
-        <Shelf
-          group={b.v.group}
-          items={b.v.items}
-          onEditItem={(item) => (itemEdit = { groupId: b.v.group.id, item })}
-          onAddItem={() => (itemEdit = { groupId: b.v.group.id, item: null })}
-          onEditGroup={() => (groupEdit = { id: b.v.group.id })}
-        />
-      {:else if b.kind === 'widget'}
-        <Widget widget={b.w} span={Math.min(b.w.cols, cols)} data={app.widgetData[b.w.id]} onedit={() => (widgetEdit = { id: b.w.id })} />
-      {:else}
-        <div class="widgets">
-          {#each b.list as w (w.id)}
-            <Widget widget={w} data={app.widgetData[w.id]} onedit={() => (widgetEdit = { id: w.id })} />
-          {/each}
+  {:else if zoned && arrange.mode === 'strip'}
+    <div class="strip-zone" bind:this={zone}>
+      <div class="strip">
+        {#each widgetList as w (w.id)}
+          <Widget widget={w} mode="strip" data={app.widgetData[w.id]} onedit={() => (widgetEdit = { id: w.id })} onopen={(el) => openPop(w.id, el)} />
+        {/each}
+      </div>
+      {#if popWidget && pop}
+        <div class="pop" style:left="{pop.left}px" style:top="{pop.top}px">
+          <Widget widget={popWidget} mode="pop" data={app.widgetData[popWidget.id]} />
         </div>
       {/if}
+    </div>
+    {#each groupList as b (blockKey(b))}{@render shelf(b)}{/each}
+  {:else if zoned}
+    <div class="wcol">
+      {#each widgetList as w (w.id)}{@render widgetOf(w)}{/each}
+    </div>
+    <div class="gzone">
+      {#each groupList as b (blockKey(b))}{@render shelf(b)}{/each}
+    </div>
+  {:else}
+    {#each shown as b (blockKey(b))}
+      {#if b.kind === 'group'}{@render shelf(b)}{:else}{@render widgetOf(b.w)}{/if}
     {/each}
   {/if}
 </main>

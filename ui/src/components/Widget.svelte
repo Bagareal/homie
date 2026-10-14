@@ -4,41 +4,41 @@
   import type { HostData, Row, RowType, Widget, WidgetData } from '../lib/types'
   import EditIcon from './EditIcon.svelte'
   import { isCollapsed, setCollapsed } from '../lib/collapse.svelte'
+  import { arrange } from '../lib/arrange.svelte'
 
   let {
     widget,
     data,
     onedit,
-    span,
     preview = false,
     collapsed: previewCollapsed = false,
+    mode = 'normal',
+    onopen,
   }: {
     widget: Widget
     data: WidgetData | undefined
     onedit?: () => void
-    // Columns it takes in the grid layout (its width, cut down to the columns on screen).
-    span?: number
     // Rendered inside the editor: not draggable or clickable.
     preview?: boolean
     // In the editor's preview: show the collapsed view.
     collapsed?: boolean
+    // In the strip a widget is a compact tile (always the collapsed view) that opens
+    // its full view on a click; "pop" is that full view.
+    mode?: 'normal' | 'strip' | 'pop'
+    onopen?: (el: HTMLElement) => void
   } = $props()
 
   let drop = $state<'before' | 'after' | null>(null)
   let vertical = $state(false)
   const editable = $derived(app.editing && !preview)
   // Collapsed: only a few values, side by side. Never while editing.
-  const folded = $derived(preview ? previewCollapsed : editable ? false : isCollapsed(widget.id, app.config?.settings.widgetCollapseBelow))
+  const folded = $derived(mode === 'strip' ? true : mode === 'pop' ? false : preview ? previewCollapsed : editable ? false : isCollapsed(widget.id, app.config?.settings.widgetCollapseBelow))
 
   const style = $derived(
     [
-      `--w-width:calc(${widget.cols} * var(--card-w) + ${widget.cols - 1} * 20px)`,
-      span ? `grid-column:span ${span}` : '',
-      widget.precise
-        ? widget.height > 0
-          ? `--w-height:${widget.height}px`
-          : ''
-        : `--w-height:calc(${widget.heightUnits} * var(--tile-min) + ${widget.heightUnits - 1} * var(--gap) + 32px + 2 * var(--group-border-w, 1px) + var(--card-head))`,
+      // One group card wide; as tall as its values need unless a height is set.
+      '--w-width:var(--card-w)',
+      widget.precise && widget.height > 0 ? `--w-height:${widget.height}px` : '',
       // Only what this widget sets itself; the rest follows the global widget look.
       widget.color ? `--w-color:${widget.color}` : '',
       widget.opacity !== undefined ? `--w-opacity:${widget.opacity}` : '',
@@ -571,10 +571,6 @@
     return picked.flatMap((r) => lines.find((l) => l.key === r.id || l.key.startsWith(`${r.id}:`)) ?? [])
   })
 
-  // Drop markers: left/right when blocks sit side by side (widgets always
-  // do; groups do in the grid layout), top/bottom when a group is stacked.
-  const grid = $derived(app.config?.settings.layout === 'grid')
-
   function dragStart(e: DragEvent) {
     app.drag = { kind: 'widget', id: widget.id }
     e.dataTransfer?.setData('text/plain', widget.name)
@@ -587,19 +583,21 @@
   function dragOver(e: DragEvent) {
     const d = app.drag
     if ((d?.kind !== 'widget' && d?.kind !== 'group') || d.id === widget.id) return
+    // Groups have a zone of their own in the column and strip layouts.
+    if (arrange.separate && d.kind === 'group') return
     e.preventDefault()
     e.stopPropagation()
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    const side = grid || d.kind === 'widget'
-    vertical = !side
-    drop = (side ? e.clientX < r.left + r.width / 2 : e.clientY < r.top + r.height / 2) ? 'before' : 'after'
+    // Drop markers: top/bottom when the widgets are stacked, left/right in the strip.
+    vertical = arrange.widgetsVertical
+    drop = (vertical ? e.clientY < r.top + r.height / 2 : e.clientX < r.left + r.width / 2) ? 'before' : 'after'
   }
   function dragLeave(e: DragEvent) {
     if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) drop = null
   }
   function onDrop(e: DragEvent) {
     const d = app.drag
-    if (d?.kind !== 'widget' && d?.kind !== 'group') return
+    if ((d?.kind !== 'widget' && d?.kind !== 'group') || (arrange.separate && d.kind === 'group')) return
     e.preventDefault()
     e.stopPropagation()
     const after = drop === 'after'
@@ -621,7 +619,7 @@
     {#if data}
       <span class="dot" class:online={data.online} title={data.online ? 'Online' : 'Unreachable'}></span>
     {/if}
-    {#if !preview && !editable}
+    {#if !preview && !editable && mode === 'normal'}
       <button type="button" class="fold" aria-label={folded ? 'Expand the widget' : 'Collapse the widget'} aria-expanded={!folded} title={folded ? 'Expand' : 'Collapse'} onclick={() => setCollapsed(widget.id, !folded)}>
         <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d={folded ? 'M2 4l4 4 4-4' : 'M2 8l4-4 4 4'} fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
       </button>
@@ -679,8 +677,26 @@
     {@render body()}
     <EditIcon />
   </div>
+{:else if mode === 'strip'}
+  <div
+    class="widget strip folded"
+    {style}
+    aria-label={widget.name}
+    role="button"
+    tabindex="0"
+    title="Click to see all the values"
+    onclick={(e) => onopen?.(e.currentTarget)}
+    onkeydown={(e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault()
+        onopen?.(e.currentTarget)
+      }
+    }}
+  >
+    {@render body()}
+  </div>
 {:else}
-  <section class="widget" class:preview class:folded {style} aria-label={widget.name}>
+  <section class="widget" class:preview class:folded class:pop={mode === 'pop'} {style} aria-label={widget.name}>
     {@render body()}
   </section>
 {/if}
@@ -729,6 +745,19 @@
   /* A collapsed widget is a label first: its title takes the accent color. */
   .widget.folded h3 {
     color: var(--accent);
+  }
+  /* In the strip a widget is a small tile you click; its full view is a .pop. */
+  .widget.strip {
+    cursor: pointer;
+    overflow: hidden;
+  }
+  .widget.strip:hover,
+  .widget.strip:focus-visible {
+    border-color: var(--accent);
+    outline: none;
+  }
+  .widget.pop {
+    box-shadow: 0 10px 30px rgb(0 0 0 / 0.45);
   }
   .fold {
     flex: none;

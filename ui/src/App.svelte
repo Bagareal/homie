@@ -28,7 +28,7 @@
     if (cfg.settings.theme === 'auto') delete root.dataset.theme
     else root.dataset.theme = cfg.settings.theme
     root.dataset.density = cfg.settings.density
-    root.dataset.layout = cfg.settings.layout ?? 'list'
+    root.dataset.layout = 'grid'
     root.style.setProperty('--bar-opacity', String(cfg.settings.barOpacity ?? 100))
     root.style.setProperty('--tile-border-w', `${cfg.settings.tileBorderWidth ?? 1}px`)
     root.style.setProperty('--group-border-w', `${cfg.settings.groupBorderWidth ?? 1}px`)

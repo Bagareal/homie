@@ -5,7 +5,7 @@
   import { app, uid } from '../lib/state.svelte'
   import { STYLE_KEYS } from '../lib/themes'
   import { mobile } from '../lib/mobile.svelte'
-  import { groupHeight, groupWidth } from '../lib/widgetSize'
+  import { cardWidth } from '../lib/widgetSize'
   import type { HostData, Row, RowType, Widget, WidgetData, WidgetKind } from '../lib/types'
   import ColorField from './ColorField.svelte'
   import Slider from './Slider.svelte'
@@ -135,27 +135,9 @@
   let previewFolded = $state(false)
   // At most four values are shown when the widget is collapsed.
   const briefCount = $derived(w.rows.filter((r) => r.collapsed).length)
-  // The size in pixels: counted in groups unless the height is set precisely.
-  const SIZE_LOCKED = 'Not available on mobile: changing the size here would break the desktop view.'
-  const widthPx = $derived(groupWidth(w.cols))
-  const heightPx = $derived(w.precise ? w.height : groupHeight(w.heightUnits)) // 0 = fit the content
+  // A widget is one group card wide, and as tall as its values need unless a height is fixed.
+  const widthPx = $derived(cardWidth())
   const fit = $derived(stageW > 0 ? Math.min(1, (stageW - 30) / widthPx) : 1)
-
-  // The size tab draws the widget next to a group card of the real dashboard,
-  // on a strip as wide as the page, all at the same scale.
-  let vw = $state(0)
-  let diagramW = $state(0)
-  const page = $derived.by(() => {
-    void [tab, vw]
-    const shelf = document.querySelector<HTMLElement>('.shelf')
-    return {
-      width: document.querySelector<HTMLElement>('.scroller')?.clientWidth ?? vw,
-      card: { w: shelf?.offsetWidth ?? 562, h: shelf?.offsetHeight ?? 200 },
-    }
-  })
-  const widgetH = $derived(heightPx > 0 ? heightPx : naturalH)
-  // The strip has 8 px of padding on each side; the rest stands for the page width.
-  const scale = $derived(page.width > 0 ? Math.max(0, diagramW - 16) / page.width : 0)
 
   function fail(on: Tab, message: string) {
     tab = on
@@ -640,7 +622,6 @@
 </script>
 
 <svelte:window
-  bind:innerWidth={vw}
   onbeforeunload={(e) => {
     if (dirty) e.preventDefault()
   }}
@@ -1131,44 +1112,22 @@
     </fieldset>
     {:else if tab === 'size'}
     <fieldset>
-      <!-- On a phone the size cannot be set: it would only break the desktop view. -->
-      <div class="size-lock" class:locked={mobile.narrow} title={mobile.narrow ? SIZE_LOCKED : undefined}>
-      <div class="size-controls" inert={mobile.narrow}>
-      <Slider label="Width (groups)" unit="" min={1} max={3} value={w.cols} oninput={(v) => (w.cols = v)} oncommit={noop} />
-      {#if w.precise}
-        <Slider label="Height (0 = fit content)" unit="px" min={0} max={1000} value={w.height} oninput={(v) => (w.height = v)} oncommit={noop} />
-      {:else}
-        <Slider label="Height (groups)" unit="" min={1} max={3} value={w.heightUnits} oninput={(v) => (w.heightUnits = v)} oncommit={noop} />
-      {/if}
+      <small>A widget is one group card wide and as tall as its values need. Where it goes next to the groups (mixed in, in a column of its own, or in the strip above them) is chosen in Settings → Appearance → Widgets.</small>
       <label class="check" title="Set the height in pixels, for a widget that must not scroll or leave a gap">
         <input
           type="checkbox"
           checked={w.precise}
           onchange={(e) => {
             w.precise = e.currentTarget.checked
-            // Start from the size it has now.
-            if (w.precise) w.height = Math.round(groupHeight(w.heightUnits))
+            // Start from the height it has now.
+            if (w.precise) w.height = Math.round(naturalH)
           }}
         />
-        Precise height
+        Fixed height
       </label>
-      </div>
-      </div>
-      {#if mobile.narrow}<small>{SIZE_LOCKED}</small>{/if}
-      <div class="diagram" bind:clientWidth={diagramW} style:height="{Math.max(widgetH, page.card.h) * scale + 16}px" style:gap="{20 * scale}px" aria-hidden="true">
-        <div
-          class="d-widget"
-          style:width="{widthPx * scale}px"
-          style:height="{widgetH * scale}px"
-          style:background="color-mix(in srgb, {w.color ?? 'var(--widget-color)'} {w.opacity ?? global.widgetOpacity ?? 100}%, transparent)"
-          style:border="{Math.max(1, (w.borderWidth ?? global.widgetBorderWidth ?? global.tileBorderWidth ?? 1) * scale)}px solid {w.borderColor ?? 'var(--widget-border)'}"
-        >widget</div>
-        <div class="d-card" style:width="{page.card.w * scale}px" style:height="{page.card.h * scale}px">group card</div>
-      </div>
-      <small>
-        To scale, on a page {page.width} px wide: this widget is {Math.round(widthPx)} × {Math.round(widgetH)} px, a group card {page.card.w} × {page.card.h} px.
-        Drag the widget wherever you like on the dashboard while editing, even between two groups.
-      </small>
+      {#if w.precise}
+        <Slider label="Height (0 = fit content)" unit="px" min={0} max={1000} value={w.height} oninput={(v) => (w.height = v)} oncommit={noop} />
+      {/if}
     </fieldset>
     {:else}
     <fieldset>
@@ -1278,53 +1237,12 @@
     color: var(--text);
     border-bottom-color: var(--accent);
   }
-  .diagram {
-    position: relative;
-    display: flex;
-    align-items: flex-start;
-    padding: 8px;
-    margin-top: 4px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    background: var(--bg);
-    overflow: hidden;
-  }
-  .d-card,
-  .d-widget {
-    display: grid;
-    place-items: center;
-    overflow: hidden;
-    color: var(--muted);
-    font-size: 0.7rem;
-  }
-  .d-card {
-    flex: none;
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    background: color-mix(in srgb, var(--shelf) 60%, transparent);
-  }
-  .d-widget {
-    flex: none;
-    border-radius: 3px;
-    box-sizing: border-box;
-  }
   fieldset {
     display: grid;
     gap: 12px;
     margin: 0;
     padding: 0;
     border: none;
-  }
-  .size-controls {
-    display: grid;
-    gap: 12px;
-  }
-  /* Greyed out where the size cannot be set; the wrapper (not the inert controls
-     inside it) carries the hover text. */
-  .size-lock.locked .size-controls {
-    opacity: 0.45;
-    filter: grayscale(1);
-    cursor: not-allowed;
   }
   .two {
     display: grid;

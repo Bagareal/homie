@@ -52,7 +52,7 @@ If Glances cannot be reached, only its rows show `n/a` (hover for the reason); t
 
 ## The editor
 
-- The preview on the left starts at the size set in the Size tab and **grows to show every value** instead of scrolling. That is for the preview only: on the dashboard the widget keeps the size you chose (and scrolls if it has more rows than fit).
+- The preview on the left **grows to show every value** instead of scrolling. On the dashboard a widget is as tall as its values need, unless you tick *Fixed height* in the Size tab (then it scrolls if it has more rows than fit).
 - Press **Test Proxmox connection** after entering the address and the token, then **Test Glances** after the Glances address.
 
 ## Troubleshooting

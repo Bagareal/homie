@@ -685,7 +685,7 @@ func TestThemeAppearanceGetsDefaults(t *testing.T) {
 	c.Themes = []Theme{{ID: "t", Name: "Bare", Appearance: Appearance{AccentColor: "#ff0000"}}}
 	c.normalize()
 	a := c.Themes[0].Appearance
-	if a.Theme != "auto" || a.Layout != "list" || a.CardOpacity != 40 || a.WidgetOpacity != 100 {
+	if a.Theme != "auto" || a.Layout != "grid" || a.WidgetLayout != "masonry" || a.CardOpacity != 40 || a.WidgetOpacity != 100 {
 		t.Errorf("defaults not filled in: %+v", a)
 	}
 	if err := c.Validate(); err != nil {
@@ -740,5 +740,35 @@ func TestPBSWidgets(t *testing.T) {
 	c.Widgets[0].Rows = []Row{{ID: "a", Type: "lxc"}}
 	if err := c.Validate(); err == nil {
 		t.Error("a Proxmox VE row is not a Backup Server row")
+	}
+}
+
+func TestTheListLayoutBecomesGridAndWidgetsHaveALayout(t *testing.T) {
+	c := Default()
+	c.Settings.Layout = "list"
+	c.Settings.WidgetLayout = ""
+	if err := c.Validate(); err != nil {
+		t.Fatalf("an old file that says list must still load: %v", err)
+	}
+	c.normalize()
+	if c.Settings.Layout != "grid" || c.Settings.WidgetLayout != "masonry" {
+		t.Errorf("layout = %q, widget layout = %q", c.Settings.Layout, c.Settings.WidgetLayout)
+	}
+	for _, ok := range []string{"masonry", "column", "strip"} {
+		c := Default()
+		c.Settings.WidgetLayout = ok
+		if err := c.Validate(); err != nil {
+			t.Errorf("%s should be valid: %v", ok, err)
+		}
+	}
+	c = Default()
+	c.Settings.WidgetLayout = "carousel"
+	if err := c.Validate(); err == nil {
+		t.Error("an unknown widget layout should be refused")
+	}
+	c = Default()
+	c.Settings.WidgetSide = "middle"
+	if err := c.Validate(); err == nil {
+		t.Error("an unknown widget side should be refused")
 	}
 }

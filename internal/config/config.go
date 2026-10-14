@@ -53,9 +53,15 @@ type Appearance struct {
 	// (fully opaque), matching every image uploaded before this setting
 	// existed. Below the image, BackgroundColor always stays full opacity.
 	BackgroundOpacity int `json:"backgroundOpacity,omitempty"`
-	// Layout is "list" (groups stacked in one column) or "grid" (groups as
-	// cards side by side).
+	// Layout is always "grid" (groups as cards side by side). The one-column "list"
+	// layout was removed: an old file that says "list" is read as "grid".
 	Layout string `json:"layout"`
+	// WidgetLayout says where the widgets go next to the groups: "masonry" (mixed
+	// with the groups, each block in the shortest column), "column" (one column of
+	// their own, on the WidgetSide) or "strip" (compact, in a row above the groups).
+	WidgetLayout string `json:"widgetLayout,omitempty"`
+	// WidgetSide is "left" (the default) or "right": the side of the widget column.
+	WidgetSide string `json:"widgetSide,omitempty"`
 	// BarOpacity is 1-100 for the top bar's background; 0 (omitted)
 	// normalizes to 100 (solid).
 	BarOpacity int `json:"barOpacity,omitempty"`
@@ -303,7 +309,8 @@ func Default() Config {
 				Theme:             "auto",
 				Density:           "comfortable",
 				BackgroundOpacity: 100,
-				Layout:            "list",
+				Layout:            "grid",
+				WidgetLayout:      "masonry",
 				BarOpacity:        100,
 				CardOpacity:       40,
 				WidgetOpacity:     100,
@@ -479,8 +486,11 @@ func (a *Appearance) normalize() {
 	if a.CardOpacity == 0 {
 		a.CardOpacity = d.CardOpacity
 	}
-	if a.Layout == "" {
+	if a.Layout == "" || a.Layout == "list" {
 		a.Layout = d.Layout
+	}
+	if a.WidgetLayout == "" {
+		a.WidgetLayout = d.WidgetLayout
 	}
 	if a.BarOpacity == 0 {
 		a.BarOpacity = d.BarOpacity
@@ -508,9 +518,19 @@ func (a Appearance) validate(what string) error {
 		return fmt.Errorf("%sinvalid density: %q", pre, a.Density)
 	}
 	switch a.Layout {
-	case "", "list", "grid": // "" = unset, filled in by normalize
+	case "", "list", "grid": // "" = unset and "list" = removed: normalize makes both "grid"
 	default:
 		return fmt.Errorf("%sinvalid layout: %q", pre, a.Layout)
+	}
+	switch a.WidgetLayout {
+	case "", "masonry", "column", "strip": // "" = unset, filled in by normalize
+	default:
+		return fmt.Errorf("%sinvalid widget layout: %q", pre, a.WidgetLayout)
+	}
+	switch a.WidgetSide {
+	case "", "left", "right":
+	default:
+		return fmt.Errorf("%sinvalid widget side: %q", pre, a.WidgetSide)
 	}
 	for name, w := range map[string]*int{"tile": a.TileBorderWidth, "group": a.GroupBorderWidth, "widget": a.WidgetBorderWidth} {
 		if w != nil && (*w < 0 || *w > 8) {

@@ -180,9 +180,14 @@
     ['comfortable', 'Comfortable'],
     ['compact', 'Compact'],
   ] as const
-  const layouts = [
-    ['list', 'List'],
-    ['grid', 'Grid'],
+  const widgetLayouts = [
+    ['masonry', 'Masonry'],
+    ['column', 'Column'],
+    ['strip', 'Strip'],
+  ] as const
+  const sides = [
+    ['left', 'Left'],
+    ['right', 'Right'],
   ] as const
   const intervals = [
     [15, '15 seconds'],
@@ -265,16 +270,26 @@
         </div>
       </fieldset>
       <fieldset>
-        <legend>Layout</legend>
+        <legend>Widgets</legend>
         <div class="seg">
-          {#each layouts as [value, label] (value)}
-            <label class:on={s.layout === value}>
-              <input type="radio" name="layout" {value} checked={s.layout === value} onchange={() => set('layout', value)} />
+          {#each widgetLayouts as [value, label] (value)}
+            <label class:on={(s.widgetLayout ?? 'masonry') === value}>
+              <input type="radio" name="widgetLayout" {value} checked={(s.widgetLayout ?? 'masonry') === value} onchange={() => set('widgetLayout', value)} />
               {label}
             </label>
           {/each}
         </div>
-        <p class="hint">List stacks the groups in one column. Grid shows each group as a card, side by side.</p>
+        {#if s.widgetLayout === 'column'}
+          <div class="seg">
+            {#each sides as [value, label] (value)}
+              <label class:on={(s.widgetSide ?? 'left') === value}>
+                <input type="radio" name="widgetSide" {value} checked={(s.widgetSide ?? 'left') === value} onchange={() => set('widgetSide', value)} />
+                {label}
+              </label>
+            {/each}
+          </div>
+        {/if}
+        <p class="hint">Masonry mixes widgets and groups, each block going to the shortest column. Column keeps the widgets in a column of their own, stacked, next to the groups. Strip puts them in a compact row above the groups: click one to see all its values. On a phone the widgets always have their own tab.</p>
       </fieldset>
     </section>
 
@@ -300,12 +315,10 @@
 
     <section>
       <h2>Groups</h2>
-      {#if s.layout === 'grid'}
-        <ColorField label="Card background" cssVar="--shelf" theme={s.theme} value={s.cardColor} onpreview={(v) => preview('cardColor', v)} oncommit={commit} />
-      {/if}
-      <ColorField label="Border" cssVar={s.layout === 'grid' ? '--line' : '--accent'} theme={s.theme} value={s.groupBorderColor} onpreview={(v) => preview('groupBorderColor', v)} oncommit={commit} />
+      <ColorField label="Card background" cssVar="--shelf" theme={s.theme} value={s.cardColor} onpreview={(v) => preview('cardColor', v)} oncommit={commit} />
+      <ColorField label="Border" cssVar="--line" theme={s.theme} value={s.groupBorderColor} onpreview={(v) => preview('groupBorderColor', v)} oncommit={commit} />
       <Slider label="Border width" unit="px" min={0} max={8} value={s.groupBorderWidth ?? 1} oninput={(v) => preview('groupBorderWidth', v)} oncommit={commit} />
-      <p class="hint">The border is the card outline in the grid layout and the line under each group in the list layout. The card background applies to the grid layout only.</p>
+      <p class="hint">Each group is a card: the border is its outline.</p>
     </section>
 
     <section>
@@ -337,9 +350,7 @@
     <section>
       <h2>Transparency</h2>
       <Slider label="Top bar opacity" value={s.barOpacity} oninput={(v) => preview('barOpacity', v)} oncommit={commit} />
-      {#if s.layout === 'grid'}
-        <Slider label="Group card opacity" value={s.cardOpacity} oninput={(v) => preview('cardOpacity', v)} oncommit={commit} />
-      {/if}
+      <Slider label="Group card opacity" value={s.cardOpacity} oninput={(v) => preview('cardOpacity', v)} oncommit={commit} />
       <p class="hint">Lower an opacity to let what is behind show through. Double-click a percentage to type an exact value.</p>
     </section>
   {:else if tab === 'general'}

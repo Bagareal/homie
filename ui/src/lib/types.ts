@@ -1,6 +1,7 @@
 export type Theme = 'auto' | 'light' | 'dark'
 export type Density = 'compact' | 'comfortable'
 export type Layout = 'list' | 'grid'
+export type WidgetLayout = 'masonry' | 'column' | 'strip'
 
 export interface Item {
   id: string
@@ -27,6 +28,9 @@ export interface Appearance {
   backgroundImage?: string
   backgroundOpacity: number
   layout: Layout
+  // Where the widgets go next to the groups, and the side of the widget column.
+  widgetLayout?: WidgetLayout
+  widgetSide?: 'left' | 'right'
   barOpacity: number
   cardColor?: string
   hoverColor?: string

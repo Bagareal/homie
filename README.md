@@ -76,7 +76,7 @@ A Proxmox, TrueNAS or UPS widget can also read the same machine's **Glances** (t
 
 Use **Edit → Add widget**, pick the type, fill in the address and press "Test connection" (each source of a widget, the main one, Glances and the UPS, has its own Test button, so you can see which one has been checked): Homie then lists what the host offers (disks, sensors, network cards, pools, drives), so you choose from a menu instead of typing names. Each value is a row you can rename ("HDD esterno" instead of `/mnt/hdd-esterno`), reorder by dragging, or remove. A CPU row can show the load, a temperature, or both side by side (the bar follows the load, or the temperature when it is alone).
 
-The editor has four tabs (Source, Values, Size, Appearance) with the preview always in view (it grows to show every value; on the dashboard the widget keeps the size you chose); the Size tab draws the widget to scale next to a real group card. In edit mode the "Add group" and "Add widget" buttons are in the top bar. You choose the size in groups (width: 1, 2 or 3 group columns; height: 1, 2 or 3 rows of tiles, or tick *Precise height* to set it in pixels) and the colors (background with opacity, text, border, bars). While editing, drag a widget wherever you like, even between two groups: groups and widgets share one order. In the grid layout a widget flows like a card.
+The editor has four tabs (Source, Values, Size, Appearance) with the preview always in view (it grows to show every value; on the dashboard the widget keeps the size you chose); In edit mode the "Add group" and "Add widget" buttons are in the top bar. A widget is one group card wide and as tall as its values need (tick *Fixed height* in the Size tab to set the height in pixels), and you choose its colors (background with opacity, text, border, bars). Where the widgets go next to the groups is a setting (*Settings → Appearance → Theme and layout → Widgets*): **Masonry** mixes widgets and groups, each block going to the shortest column; **Column** keeps the widgets stacked in a column of their own, on the left or the right; **Strip** puts them, compact, in a row above the groups, and a click opens one in a small window with all its values. While editing, drag a widget to reorder it (in Masonry also between the groups); on a phone the widgets have their own tab.
 
 **Collapsing widgets.** Every widget has a small arrow in its header that collapses it to a single line with up to four values (each with its name in small print underneath); the button "Collapse widgets" in the top bar collapses or opens them all. In the widget's Values tab, tick "Collapsed" on the values to keep (none ticked: the first four). Settings → General can collapse them automatically when the window is narrower than a width you choose, so a laptop screen starts compact while a big monitor shows everything. What you collapse or open by hand is remembered per device (in the browser), not in the shared configuration, and never applies on a phone, which has its own Widgets tab.
 
@@ -93,10 +93,10 @@ The text comes from the release notes on GitHub, which are built from the commit
 The Appearance section in Settings lets you customize:
 
 - the theme (light, dark, or automatic) and the tile density
-- the layout: *List* stacks the groups in one column, *Grid* shows each group as a card, with the cards side by side
-- colors: page background, tile background, accent (used for group titles and drag indicators), and, in the grid layout, the group card color. Each color has a "Reset" button to return to the theme's default.
+- where the widgets go next to the groups: *Masonry*, *Column* (left or right) or *Strip*, see Widgets above. Each group is a card, and the cards sit side by side (up to three columns, fewer on a narrower window).
+- colors: page background, tile background, accent (used for group titles and drag indicators), and the group card color. Each color has a "Reset" button to return to the theme's default.
 - a background image (JPEG or PNG) with its own opacity
-- the opacity of the top bar and, in the grid layout, of the group cards
+- the opacity of the top bar and of the group cards
 
 ### Themes
 

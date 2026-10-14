@@ -1,6 +1,7 @@
 <script lang="ts">
   import { app } from '../lib/state.svelte'
   import { mobile, toggleFold } from '../lib/mobile.svelte'
+  import { arrange } from '../lib/arrange.svelte'
   import type { Group, Item } from '../lib/types'
   import Tile from './Tile.svelte'
   import EditIcon from './EditIcon.svelte'
@@ -45,15 +46,17 @@
 
   function shelfOver(e: DragEvent) {
     if (!isBlock(app.drag) || app.drag!.id === group.id) return
+    // Widgets have a zone of their own in the column and strip layouts.
+    if (arrange.separate && app.drag!.kind === 'widget') return
     e.preventDefault()
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    // Cards sit side by side in the grid layout, stacked in the list layout.
-    const before = app.config?.settings.layout === 'grid' ? e.clientX < r.left + r.width / 2 : e.clientY < r.top + r.height / 2
+    // Cards sit side by side, except in masonry, where a block's neighbours are above and below.
+    const before = arrange.groupsVertical ? e.clientY < r.top + r.height / 2 : e.clientX < r.left + r.width / 2
     groupDrop = before ? 'before' : 'after'
   }
   function shelfDrop(e: DragEvent) {
     const d = app.drag
-    if (!d || !isBlock(d)) return
+    if (!d || !isBlock(d) || (arrange.separate && d.kind === 'widget')) return
     e.preventDefault()
     const after = groupDrop === 'after'
     const valid = groupDrop !== null
@@ -81,6 +84,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <section
   class="shelf"
+  class:vertical={arrange.groupsVertical}
   class:drop-before={groupDrop === 'before'}
   class:drop-after={groupDrop === 'after'}
   class:dragging={app.drag?.kind === 'group' && app.drag.id === group.id}

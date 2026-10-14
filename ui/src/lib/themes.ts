@@ -5,6 +5,8 @@ export const APPEARANCE_KEYS = [
   'theme',
   'density',
   'layout',
+  'widgetLayout',
+  'widgetSide',
   'backgroundColor',
   'tileColor',
   'accentColor',

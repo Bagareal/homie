@@ -248,20 +248,6 @@ select {
   border-bottom: var(--group-border-w, 1px) solid var(--group-border, color-mix(in srgb, var(--accent) 45%, transparent));
 }
 
-/* Widgets: standalone blocks that flow in rows next to (or above/below) the groups. */
-
-.widgets {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-start;
-  align-items: flex-start;
-  align-self: center;
-  gap: var(--gap);
-  width: var(--row-width);
-  max-width: 100%;
-  margin-bottom: 14px;
-}
-
 /* In the grid layout a widget is one more item in the flow of cards. */
 :root[data-layout='grid'] .shelves > .widget {
   align-self: start;
@@ -402,6 +388,88 @@ button.tape:hover {
 
 :root[data-layout='grid'] .edit-hint {
   max-width: none;
+}
+
+/* A group dragged in masonry has its neighbours above and below, not at its sides. */
+:root[data-layout='grid'] .shelf.vertical.drop-before {
+  box-shadow: 0 -4px 0 var(--accent);
+}
+
+:root[data-layout='grid'] .shelf.vertical.drop-after {
+  box-shadow: 0 4px 0 var(--accent);
+}
+
+/* Where the widgets go (Settings -> Appearance -> Widgets). */
+
+/* Masonry: a grid of 1 px rows. lib/masonry.ts puts every block on the shortest
+   column, on the rows its height needs, so there are no gaps and no equal rows. */
+:root[data-layout='grid'] .shelves.masonry {
+  grid-auto-rows: 1px;
+  row-gap: 0;
+  align-items: start;
+}
+
+:root[data-layout='grid'] .shelves.masonry > .shelf,
+:root[data-layout='grid'] .shelves.masonry > .widget {
+  align-self: start;
+}
+
+/* Column: the widgets stacked in a column of their own, the groups in the others. */
+:root[data-layout='grid'] .shelves.split > .wcol {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  align-self: start;
+  min-width: 0;
+}
+
+:root[data-layout='grid'] .shelves.split > .gzone {
+  grid-column: 2 / -1;
+  grid-row: 1;
+  display: grid;
+  grid-template-columns: repeat(var(--gcols, 2), minmax(0, 1fr));
+  gap: 20px;
+  align-items: stretch;
+  min-width: 0;
+}
+
+:root[data-layout='grid'] .shelves.split.right > .wcol {
+  grid-column: -2;
+}
+
+:root[data-layout='grid'] .shelves.split.right > .gzone {
+  grid-column: 1 / -2;
+}
+
+/* With a single column the widgets come first and the groups below. */
+:root[data-layout='grid'] .shelves.split.one > .wcol,
+:root[data-layout='grid'] .shelves.split.one > .gzone {
+  grid-column: 1 / -1;
+}
+
+:root[data-layout='grid'] .shelves.split.one > .gzone {
+  grid-row: 2;
+}
+
+/* Strip: compact widget tiles in a row above the groups; a click opens the full view. */
+:root[data-layout='grid'] .shelves.stripmode > .strip-zone {
+  grid-column: 1 / -1;
+  position: relative;
+}
+
+.strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.strip-zone > .pop {
+  position: absolute;
+  z-index: 20;
+  width: var(--card-w);
+  max-width: 100%;
 }
 
 /* Tiles */
