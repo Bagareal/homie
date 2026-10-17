@@ -452,10 +452,10 @@ button.tape:hover {
 
 .strip-row {
   display: grid;
-  /* auto-fit drops the empty columns, so a few widgets share the whole row;
-     the max keeps one or two of them from turning into huge tiles. */
-  grid-template-columns: repeat(auto-fit, minmax(230px, 420px));
-  justify-content: center;
+  /* One line as wide as the groups below: each of the --n widgets takes an
+     equal share, and only a row too narrow for the 230px minimum wraps.
+     The 1px keeps rounding from dropping a column. */
+  grid-template-columns: repeat(auto-fit, minmax(max(230px, calc((100% - (var(--n, 1) - 1) * 12px) / var(--n, 1) - 1px)), 1fr));
   gap: 12px;
 }
 
