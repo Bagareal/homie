@@ -117,21 +117,6 @@
     if (pop && !(e.target as HTMLElement).closest('.pop, .widget.strip')) pop = null
   }
 
-  const summary = $derived.by(() => {
-    let up = 0
-    let down = 0
-    for (const g of cfg.groups)
-      for (const it of g.items) {
-        const s = it.check ? app.status[it.id] : undefined
-        if (s) s.up ? up++ : down++
-      }
-    if (up + down === 0) return ''
-    const parts = [`${up} online`]
-    if (down) parts.push(down === 1 ? '1 unreachable' : `${down} unreachable`)
-    return parts.join(', ')
-  })
-  const anyDown = $derived(summary.includes('unreachable'))
-
   // In the grid layout the cards sit on fixed columns inside a block that is
   // centered: as many columns as fit, never more than MAX_COLS, so a wide screen
   // keeps a compact block and a narrower one drops to two columns, then one.
@@ -218,9 +203,6 @@
       placeholder="Search (press /)"
       aria-label="Search services"
     />
-  {/if}
-  {#if summary}
-    <p class="summary" class:alert={anyDown}>{summary}</p>
   {/if}
   <nav class="actions">
     {#if cfg.widgets.length > 0 && !app.editing && !mobile.narrow && arrange.mode !== 'strip'}

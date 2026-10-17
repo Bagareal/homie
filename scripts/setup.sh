@@ -24,6 +24,22 @@ if ! command -v curl >/dev/null || ! command -v sha256sum >/dev/null; then
   apt-get install -y -qq curl ca-certificates coreutils >/dev/null
 fi
 
+# Patch the container's own Debian packages (security fixes), so one `update`
+# keeps everything current. Plain `upgrade` only: it never removes a package and
+# never moves to a new Debian release. A failure here is reported, not fatal:
+# Homie itself must still update.
+os_upgrade() {
+  command -v apt-get >/dev/null || return 0
+  echo "Updating the system packages..."
+  export DEBIAN_FRONTEND=noninteractive
+  if apt-get update -qq && apt-get -y -qq -o Dpkg::Options::=--force-confold upgrade >/dev/null; then
+    apt-get -y -qq autoclean >/dev/null || true
+    echo "System packages are up to date."
+  else
+    echo "warning: the system package update failed; Homie is not affected." >&2
+  fi
+}
+
 OLD="$([[ -x $BIN ]] && $BIN --version || echo "none")"
 
 # Download the latest release and verify its checksum.
@@ -37,6 +53,7 @@ curl -fsSL -o "$TMP/SHA256SUMS" "${BASE}/SHA256SUMS" || die "checksum download f
 NEW="$(chmod +x "$TMP/homie-linux-${ARCH}" && "$TMP/homie-linux-${ARCH}" --version)"
 if [[ "$OLD" == "$NEW" ]]; then
   echo "Homie is already at the latest version (${NEW})."
+  os_upgrade
   exit 0
 fi
 
@@ -83,4 +100,5 @@ if [[ "$OLD" == "none" ]]; then
   echo "Homie ${NEW} installed."
 else
   echo "Homie updated from ${OLD} to ${NEW}."
+  os_upgrade
 fi

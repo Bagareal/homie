@@ -310,7 +310,7 @@
       <ColorField label="Border" cssVar="--line" theme={s.theme} value={s.tileBorderColor} onpreview={(v) => preview('tileBorderColor', v)} oncommit={commit} />
       <Slider label="Border width" unit="px" min={0} max={8} value={s.tileBorderWidth ?? 1} oninput={(v) => preview('tileBorderWidth', v)} oncommit={commit} />
       <ColorField label="Hover glow" cssVar="--text" theme={s.theme} value={s.glowColor} onpreview={(v) => preview('glowColor', v)} oncommit={commit} />
-      <p class="hint">A border width of 0 hides the border. Without a custom glow color, the glow is a soft shade of the text color.</p>
+      <p class="hint">The hover background and text color also apply to the buttons. A border width of 0 hides the border. Without a custom glow color, the glow is a soft shade of the text color.</p>
     </section>
 
     <section>

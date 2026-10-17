@@ -132,6 +132,7 @@ button,
 button:hover,
 .btn:hover {
   background: var(--tile-hover);
+  color: var(--tile-text-hover, var(--text));
 }
 
 button.primary {
@@ -201,16 +202,6 @@ select {
 
 .search {
   width: min(320px, 100%);
-}
-
-.summary {
-  margin: 0;
-  color: var(--muted);
-}
-
-.summary.alert {
-  color: var(--down);
-  font-weight: 600;
 }
 
 .actions {
@@ -461,7 +452,10 @@ button.tape:hover {
 
 .strip-row {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  /* auto-fit drops the empty columns, so a few widgets share the whole row;
+     the max keeps one or two of them from turning into huge tiles. */
+  grid-template-columns: repeat(auto-fit, minmax(230px, 420px));
+  justify-content: center;
   gap: 12px;
 }
 
@@ -966,6 +960,7 @@ label.check {
 
 .update-pill:hover {
   background: var(--accent);
+  color: #1a1a1a;
   filter: brightness(1.12);
 }
 
