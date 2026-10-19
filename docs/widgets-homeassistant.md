@@ -31,6 +31,10 @@ Press **Test connection**. Homie reads the list of your entities, and the **Valu
 
 The widget re-reads at the interval you set (2–300 seconds).
 
+## Two values in one row
+
+A temperature and a humidity (or any two sensors) can share a row, side by side, like the load and the temperature of a CPU: on the row of the first sensor tick **Second value** and pick the other one. The row shows both (`21.4 °C   55%`), takes its name from the first unless you give it one, turns red if either is unavailable, and its bar follows the one that is a percentage. A row with two values has no switch.
+
 ## Switching things
 
 Rows of these kinds can have a **Switch** (a **Run button** for scenes, scripts and buttons): `light`, `switch`, `input_boolean`, `fan`, `automation`, `scene`, `script`, `button`, `input_button`. Tick the box on the row in the Values tab. Without it, the row only shows the value.

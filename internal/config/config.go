@@ -254,6 +254,9 @@ type Row struct {
 	// Homie may send commands for this entity. Only the entities that were given
 	// one can ever be switched, and only the kinds in homeassistant.Actions.
 	Control bool `json:"control,omitempty"`
+	// Key2, for a Home Assistant row: a second entity shown next to the first (a
+	// temperature and a humidity, say). It is only read, so the row has no switch.
+	Key2 string `json:"key2,omitempty"`
 }
 
 const (
@@ -838,6 +841,12 @@ func validateRows(w Widget) error {
 		}
 		if r.Type == "entity" && !homeassistant.EntityID.MatchString(r.Key) {
 			return fmt.Errorf("widget %q: %q is not a Home Assistant entity id (like sensor.power or light.desk)", w.Name, r.Key)
+		}
+		if r.Key2 != "" && !(r.Type == "entity" && homeassistant.EntityID.MatchString(r.Key2)) {
+			return fmt.Errorf("widget %q: %q is not a Home Assistant entity id (like sensor.humidity)", w.Name, r.Key2)
+		}
+		if r.Key2 != "" && r.Control {
+			return fmt.Errorf("widget %q: a row with two values cannot have a switch", w.Name)
 		}
 		if r.Control && !(r.Type == "entity" && r.Source == "" && homeassistant.Controllable(r.Key)) {
 			return fmt.Errorf("widget %q: %q cannot be controlled from Homie", w.Name, r.Key)

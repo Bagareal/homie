@@ -587,6 +587,7 @@
       return fail('source', `Enter a valid address, for example ${ups ? 'nut://192.168.1.10' : nas ? 'https://truenas.local' : 'http://192.168.1.10:61208'}.`)
     }
     if (ha && !saved?.hasPassword && !w.password) return fail('source', 'Enter the long-lived access token (Home Assistant: your profile → Security → Long-lived access tokens).')
+    if (w.rows.some((r) => r.key2 !== undefined && !r.key2.trim())) return fail('values', 'Pick the second entity of the rows that have “Second value” ticked, or untick it.')
     if (w.rows.length === 0) return fail('values', 'Add at least one value to show.')
     if (w.rows.some((r) => r.type === 'client' && !(r.key ?? '').trim())) return fail('values', 'A client needs its address (the connected ones are listed once the connection is tested).')
     // The extra source: addresses tidied up; with nothing to read it is simply off.
@@ -624,7 +625,7 @@
       username: (w.username ?? '').trim(),
       // Changing the address or username drops the stored password on the server.
       clearPassword: !!w.clearPassword || (addressChanged && !w.password),
-      rows: w.rows.filter((r) => (r.source !== 'glances' || glances) && (r.source !== 'nut' || nut)).map((r) => ({ ...$state.snapshot(r), name: (r.name ?? '').trim() })),
+      rows: w.rows.filter((r) => (r.source !== 'glances' || glances) && (r.source !== 'nut' || nut)).map((r) => ({ ...$state.snapshot(r), name: (r.name ?? '').trim(), key2: r.key2?.trim() || undefined })),
     }
     if (shareLook) {
       // Its own settings move to Settings → Widgets; the widget then simply follows them.
@@ -920,7 +921,19 @@
                     /> Temperature
                   </label>
                 {/if}
-                {#if r.type === 'entity' && controllable(r.key)}
+                {#if r.type === 'entity'}
+                  <label class="check" title="Show a second value next to this one, for example a humidity next to a temperature">
+                    <input
+                      type="checkbox"
+                      checked={r.key2 !== undefined}
+                      onchange={(e) => {
+                        r.key2 = e.currentTarget.checked ? '' : undefined
+                        if (e.currentTarget.checked) r.control = undefined
+                      }}
+                    /> Second value
+                  </label>
+                {/if}
+                {#if r.type === 'entity' && r.key2 === undefined && controllable(r.key)}
                   <label class="check" title="Let anyone signed in to Homie control this entity from the widget">
                     <input type="checkbox" checked={!!r.control} onchange={(e) => (r.control = e.currentTarget.checked || undefined)} />
                     {r.key?.split('.')[0] && ['scene', 'script', 'button', 'input_button'].includes(r.key.split('.')[0]) ? 'Run button' : 'Switch'}
@@ -988,6 +1001,18 @@
                   {@render keyOptions(r, 'Pick a value…', Object.entries(sd?.vars ?? {}).map(([k, v]) => ({ value: k, label: `${k} · ${v}` })))}
                 {:else if r.type === 'entity'}
                   <code class="eid" title="Home Assistant entity id">{r.key}</code>
+                  {#if r.key2 !== undefined}
+                    <input
+                      bind:value={r.key2}
+                      list="ha-entities"
+                      maxlength="200"
+                      placeholder="Second entity: type a name or an id…"
+                      aria-label="Second entity of this row"
+                      autocomplete="off"
+                      spellcheck="false"
+                    />
+                    {#if r.key2 && found?.entityList && !entityMap.has(r.key2)}<small class="bad">not found in Home Assistant</small>{/if}
+                  {/if}
                   {#if found?.entityList && !entityMap.has(r.key ?? '')}<small class="bad">not found in Home Assistant</small>{/if}
                 {:else if r.type === 'client'}
                   <input bind:value={r.key} maxlength="100" list="clients-{r.id}" placeholder="Address, e.g. 192.168.1.20" aria-label="Address of the client" />

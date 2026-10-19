@@ -55,9 +55,14 @@ func metricsOf(kind string, rows []config.Row) []string {
 		seen := map[string]bool{}
 		var ids []string
 		for _, r := range rows {
-			if r.Type == "entity" && !seen[r.Key] {
-				seen[r.Key] = true
-				ids = append(ids, r.Key)
+			if r.Type != "entity" {
+				continue
+			}
+			for _, id := range []string{r.Key, r.Key2} {
+				if id != "" && !seen[id] {
+					seen[id] = true
+					ids = append(ids, id)
+				}
 			}
 		}
 		sort.Strings(ids)

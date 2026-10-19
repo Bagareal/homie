@@ -106,6 +106,8 @@ export interface Row {
   // Home Assistant rows (`key` is the entity id): show a switch, or a run button for a
   // scene, script or button, that sends the command.
   control?: boolean
+  // Home Assistant rows: a second entity shown next to the first (a temperature and a humidity).
+  key2?: string
 }
 
 // An extra source of a widget (Glances). Like the main one, its password is write-only.

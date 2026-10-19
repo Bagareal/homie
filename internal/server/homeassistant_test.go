@@ -171,8 +171,10 @@ func TestHomeAssistantConfigIsValidated(t *testing.T) {
 		"a switch on another kind": func(c *config.Config) {
 			c.Widgets[0].Rows[0] = config.Row{ID: "r1", Type: "entity", Key: "scene.x", Source: "nut", Control: true}
 		},
-		"an upper-case id":             func(c *config.Config) { c.Widgets[0].Rows[0].Key = "Sensor.Power" },
-		"a token of a few thousand b.": func(c *config.Config) { c.Widgets[0].Password = strings.Repeat("a", 2001) },
+		"an upper-case id":                 func(c *config.Config) { c.Widgets[0].Rows[0].Key = "Sensor.Power" },
+		"a second value with a switch":     func(c *config.Config) { c.Widgets[0].Rows[1].Key2 = "sensor.power" },
+		"a second value that is no entity": func(c *config.Config) { c.Widgets[0].Rows[0].Key2 = "not an id" },
+		"a token of a few thousand b.":     func(c *config.Config) { c.Widgets[0].Password = strings.Repeat("a", 2001) },
 	} {
 		c := haConfig("http://192.168.1.10:8123")
 		mutate(&c)
@@ -182,5 +184,14 @@ func TestHomeAssistantConfigIsValidated(t *testing.T) {
 	}
 	if err := haConfig("http://192.168.1.10:8123").Validate(); err != nil {
 		t.Errorf("a good configuration: %v", err)
+	}
+}
+
+func TestHomeAssistantRowWithTwoValuesReadsBoth(t *testing.T) {
+	if got := metricsOf("homeassistant", []config.Row{
+		{ID: "a", Type: "entity", Key: "sensor.temp", Key2: "sensor.humidity"},
+		{ID: "b", Type: "entity", Key: "sensor.humidity"},
+	}); strings.Join(got, ",") != "sensor.humidity,sensor.temp" {
+		t.Errorf("entities asked for: %v", got)
 	}
 }

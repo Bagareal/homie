@@ -220,6 +220,22 @@
   let pending = $state<Record<string, boolean>>({})
 
   function haLine(r: Row, d: HostData): Line {
+    // Two values side by side (a temperature and a humidity): each is read like a row of
+    // its own, the text is joined, and the bar follows the one that is a percentage.
+    if (r.key2) {
+      const one = haLine({ ...r, key2: undefined, control: false }, d)
+      const two = haLine({ ...r, key: r.key2, key2: undefined, control: false, name: undefined }, d)
+      const pct = one.pct ?? two.pct
+      return {
+        key: r.id,
+        label: r.name || one.label,
+        value: `${one.value}   ${two.value}`,
+        pct,
+        hot: pct !== undefined && ((one.pct !== undefined && one.hot) || (two.pct !== undefined && two.hot)),
+        bad: one.bad || two.bad,
+        title: [one.title, two.title].filter(Boolean).join('\n'),
+      }
+    }
     const e: HAEntity | undefined = d.entities?.[r.key ?? '']
     const label = r.name || e?.name || r.key || labels.entity
     if (!e) return { key: r.id, label, value: 'n/a' }
