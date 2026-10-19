@@ -27,6 +27,9 @@
       password = again = ''
     } catch (err) {
       error = (err as Error).message
+      // The server may know something the page does not (a reset was asked for while it
+      // was open): read the state again, so the code field shows up when it is needed.
+      await auth.refresh().catch(() => {})
     } finally {
       busy = false
     }
