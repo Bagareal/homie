@@ -980,6 +980,10 @@
                     <option value="input">Input (mains)</option>
                     <option value="output">Output</option>
                   </select>
+                {:else if r.type === 'power' && sd?.vars && sd.vars['ups.realpower'] === undefined}
+                  <small class="warn" role="note">
+                    ⚠ This UPS does not report its real power, so the value is an estimate (its rated power × its load%{Number(sd.vars['ups.realpower.nominal']) > 0 ? `, in steps of about ${Math.round(Number(sd.vars['ups.realpower.nominal'])) / 100} W for each 1% of load` : ''}) and shows a “~”. {Number(sd.vars['ups.realpower.nominal']) > 0 ? '' : 'It does not give its rated power either, so the value will show n/a. '}For the real consumption, measure it with a smart plug, for example with a Home Assistant widget.
+                  </small>
                 {:else if r.type === 'var'}
                   {@render keyOptions(r, 'Pick a value…', Object.entries(sd?.vars ?? {}).map(([k, v]) => ({ value: k, label: `${k} · ${v}` })))}
                 {:else if r.type === 'entity'}
@@ -1443,6 +1447,11 @@
   .addent input {
     width: 100%;
     max-width: 460px;
+  }
+  .warn {
+    grid-column: 1 / -1;
+    color: var(--accent);
+    line-height: 1.35;
   }
   .eid {
     grid-column: 1 / -1;
