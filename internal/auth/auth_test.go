@@ -208,8 +208,18 @@ func TestResetFromTerminal(t *testing.T) {
 	if _, err := m.Setup("ivan", "a-long-enough-password", "WRONGCODE", "x"); !errors.Is(err, ErrBadCode) {
 		t.Fatalf("setup with a wrong code: %v", err)
 	}
-	if _, err := m.Setup("ivan", "a-brand-new-password", code, "x"); err != nil {
+	if info.Username != "ivan" {
+		t.Fatalf("the reset forgot the user name: %+v", info)
+	}
+	// Whatever name is sent, the password is set for the account that was reset.
+	if _, err := m.Setup("someone-else", "a-brand-new-password", code, "x"); err != nil {
 		t.Fatalf("setup with the code: %v", err)
+	}
+	if _, err := m.Login("ivan", "a-brand-new-password", "x"); err != nil {
+		t.Fatalf("the user name did not stay: %v", err)
+	}
+	if _, err := m.Login("someone-else", "a-brand-new-password", "x"); err == nil {
+		t.Fatal("a name that was not the account's can sign in")
 	}
 	if m.Check(tok).State != StateLogin {
 		t.Fatal("an old session survived the reset")

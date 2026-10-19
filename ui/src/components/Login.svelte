@@ -2,6 +2,8 @@
   import { auth } from '../lib/auth.svelte'
 
   const setup = $derived(auth.state === 'setup')
+  // After "homie-reset-password": the user name stays, only a new password is chosen.
+  const reset = $derived(setup && auth.needCode && !!auth.username)
   let username = $state('')
   let password = $state('')
   let again = $state('')
@@ -16,6 +18,7 @@
       if (password.length < 10) return void (error = 'The password needs at least 10 characters.')
       if (password !== again) return void (error = 'The two passwords are not the same.')
       if (auth.needCode && !code.trim()) return void (error = 'Enter the code printed by the reset command.')
+      if (reset) username = auth.username
     }
     busy = true
     try {
@@ -34,20 +37,34 @@
   <form onsubmit={submit} novalidate>
     <h1>Homie</h1>
     <p class="lead">
-      {#if setup}
-        {auth.needCode ? 'The account was reset. Create the new one to open Homie.' : 'Welcome. Create the account that opens Homie.'}
+      {#if reset}
+        The password was reset. Enter the code printed by <code>homie-reset-password</code> and choose a new one. Your dashboard and widgets are untouched.
+      {:else if setup}
+        {auth.needCode ? 'Create the account with the code printed by the reset command.' : 'Welcome. Create the account that opens Homie.'}
       {:else}
         Sign in to open the dashboard.
       {/if}
     </p>
 
+    {#if reset}
+      <label>
+        Code from the reset command
+        <!-- svelte-ignore a11y_autofocus -->
+        <input bind:value={code} name="code" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="32" autofocus />
+      </label>
+      <label>
+        User name
+        <input value={auth.username} name="username" autocomplete="username" readonly />
+      </label>
+    {:else}
+      <label>
+        User name
+        <!-- svelte-ignore a11y_autofocus -->
+        <input bind:value={username} name="username" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="64" required autofocus />
+      </label>
+    {/if}
     <label>
-      User name
-      <!-- svelte-ignore a11y_autofocus -->
-      <input bind:value={username} name="username" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="64" required autofocus />
-    </label>
-    <label>
-      Password
+      {reset ? 'New password' : 'Password'}
       <input type="password" bind:value={password} name="password" autocomplete={setup ? 'new-password' : 'current-password'} maxlength="200" required />
     </label>
     {#if setup}
@@ -56,7 +73,7 @@
         <input type="password" bind:value={again} name="password2" autocomplete="new-password" maxlength="200" required />
       </label>
       <small>At least 10 characters. A few random words are easy to remember and hard to guess.</small>
-      {#if auth.needCode}
+      {#if auth.needCode && !reset}
         <label>
           Code from the reset command
           <input bind:value={code} name="code" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="32" />
@@ -65,7 +82,7 @@
     {/if}
 
     {#if error}<p class="error" role="alert">{error}</p>{/if}
-    <button type="submit" class="primary" disabled={busy}>{busy ? 'Please wait…' : setup ? 'Create the account' : 'Sign in'}</button>
+    <button type="submit" class="primary" disabled={busy}>{busy ? 'Please wait…' : reset ? 'Set the new password' : setup ? 'Create the account' : 'Sign in'}</button>
     {#if !setup}
       <small class="forgot">Forgot the password? In the Homie container, run <code>homie-reset-password</code>.</small>
     {/if}
@@ -107,6 +124,9 @@
   }
   input {
     font-size: 16px; /* no zoom when the field is focused on a phone */
+  }
+  input[readonly] {
+    opacity: 0.7;
   }
   small {
     color: var(--muted);

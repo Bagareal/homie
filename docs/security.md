@@ -18,7 +18,7 @@ In the Homie container run:
 homie-reset-password
 ```
 
-It signs every device out and forgets the account. Open Homie in the browser and create the new one, typing the **code** the command printed (so nobody else on the network can create it first). Your dashboard and widgets are not touched. (Installed before this version? Run `update` first: it adds the command.)
+It signs every device out and forgets the password; the user name stays. Open Homie in the browser: it asks for the **code** the command printed (so nobody else on the network can set the password first) and a new password. Your dashboard and widgets are not touched. (Installed before this version? Run `update` first: it adds the command.)
 
 ## What protects the account
 

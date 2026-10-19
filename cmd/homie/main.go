@@ -81,8 +81,8 @@ func main() {
 }
 
 // resetPassword is "homie reset-password": it makes the running server forget the
-// account, so the next visit to the page creates a new one, and prints the code
-// that creation needs (so nobody else on the network can do it first).
+// password (the user name stays), so the next visit to the page asks for a new one,
+// and prints the code that needs (so nobody else on the network can do it first).
 func resetPassword() {
 	dataDir := env("HOMIE_DATA", "./data")
 	code, err := auth.Reset(dataDir)
@@ -90,7 +90,7 @@ func resetPassword() {
 		fmt.Fprintf(os.Stderr, "reset-password: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Print("The account is forgotten the next time the page is opened (every device is signed out).\n")
-	fmt.Printf("Open Homie in the browser and create the new account with this code:\n\n    %s\n\n", code)
+	fmt.Print("The password is reset the next time the page is opened (every device is signed out; the dashboard and the widgets are not touched).\n")
+	fmt.Printf("Open Homie in the browser and choose the new password with this code:\n\n    %s\n\n", code)
 	fmt.Printf("Data folder used: %s (set HOMIE_DATA if it is another one).\n", dataDir)
 }

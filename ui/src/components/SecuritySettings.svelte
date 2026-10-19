@@ -184,7 +184,7 @@
       <button type="button" onclick={signOut}>Sign out</button>
     </div>
   </form>
-  <p class="hint">At least 10 characters. Changing the password signs out every other device. If you forget it, run <code>homie-reset-password</code> in the Homie container and create the account again.</p>
+  <p class="hint">At least 10 characters. Changing the password signs out every other device. If you forget it, run <code>homie-reset-password</code> in the Homie container, then open Homie and choose a new password with the code it prints.</p>
 </section>
 
 <section>

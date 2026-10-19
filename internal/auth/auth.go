@@ -91,6 +91,9 @@ type file struct {
 	Passkeys  []*Passkey `json:"passkeys"`
 	Origin    string     `json:"origin,omitempty"`    // where the passkeys were made, e.g. https://homie.example.com
 	SetupCode string     `json:"setupCode,omitempty"` // sha256 of the code after a reset, empty on a first install
+	// ResetUser is the user name of the account a reset from the terminal forgot: the
+	// new password is set for the same one.
+	ResetUser string `json:"resetUser,omitempty"`
 }
 
 // Manager keeps the account and the sessions.
@@ -160,7 +163,7 @@ func (m *Manager) Check(token string) Info {
 	defer m.mu.Unlock()
 	m.pollReset()
 	if m.f.Account == nil {
-		return Info{State: StateSetup, NeedCode: m.f.SetupCode != ""}
+		return Info{State: StateSetup, NeedCode: m.f.SetupCode != "", Username: m.f.ResetUser}
 	}
 	s := m.sessionLocked(token)
 	if s == nil {
@@ -291,20 +294,24 @@ func (m *Manager) HasAccount() bool {
 }
 
 // Setup creates the account and signs in. Allowed only while there is none; after
-// a reset from the terminal it also needs the code that was printed there.
+// a reset from the terminal it also needs the code that was printed there, and the
+// user name stays the one the account had.
 func (m *Manager) Setup(username, password, code, label string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.pollReset()
+	if m.f.Account != nil {
+		return "", ErrHasAccount
+	}
+	if m.f.ResetUser != "" {
+		username = m.f.ResetUser
+	}
 	username = strings.TrimSpace(username)
 	if err := validUsername(username); err != nil {
 		return "", err
 	}
 	if err := validPassword(password, username); err != nil {
 		return "", err
-	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.pollReset()
-	if m.f.Account != nil {
-		return "", ErrHasAccount
 	}
 	if err := m.throttle(); err != nil {
 		return "", err
@@ -322,7 +329,7 @@ func (m *Manager) Setup(username, password, code, label string) (string, error) 
 	m.succeed()
 	salt := random(16)
 	m.f.Account = &account{Username: username, UserID: random(16), Salt: salt, Hash: hashPassword(password, salt, hashIterations), Iter: hashIterations, Created: m.now()}
-	m.f.SetupCode = ""
+	m.f.SetupCode, m.f.ResetUser = "", ""
 	m.f.Sessions, m.f.Passkeys, m.f.Origin = nil, nil, ""
 	m.byID = map[string]*Session{}
 	return m.newSession(label)
@@ -548,8 +555,8 @@ func (m *Manager) RevokeOthers(token string) {
 const resetFile = "reset-password"
 
 // Reset is the terminal command "homie reset-password": it asks the running
-// server, through a file, to forget the account, and returns the code the new
-// account will need (so that nobody else on the network can create it first).
+// server, through a file, to forget the password (the user name stays), and returns
+// the code the new password will need (so that nobody else on the network can create it first).
 // Going through the server keeps the files with their owner (the service runs as
 // its own user, the command as root).
 func Reset(dir string) (string, error) {
@@ -591,7 +598,11 @@ func (m *Manager) pollReset() {
 	if len(h) != 64 {
 		return
 	}
-	m.f = file{Sessions: []*Session{}, Passkeys: []*Passkey{}, SetupCode: h}
+	user := m.f.ResetUser
+	if m.f.Account != nil {
+		user = m.f.Account.Username
+	}
+	m.f = file{Sessions: []*Session{}, Passkeys: []*Passkey{}, SetupCode: h, ResetUser: user}
 	m.byID = map[string]*Session{}
 	m.fails, m.blocked = 0, time.Time{}
 	m.save()
