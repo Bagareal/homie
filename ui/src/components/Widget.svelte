@@ -254,26 +254,37 @@
     return { ...line, value: withUnit(e.state, e.unit) }
   }
 
-  async function press(l: Line) {
+  // One timer per row: the last press is the one that counts.
+  const letGo: Record<string, ReturnType<typeof setTimeout>> = {}
+
+  async function press(l: Line, e?: Event) {
+    // In the strip the tile itself is a button that opens the full view: not this one.
+    e?.stopPropagation()
     const c = l.ctl
-    if (!c || c.busy || !c.usable || preview || editable) return
-    // The switch moves at once; Home Assistant has the last word a moment later.
-    pending[c.row] = c.mode === 'toggle' ? !c.on : true
+    if (!c || !c.usable || preview || editable) return
+    if (c.mode === 'trigger' && c.busy) return
+    // The switch moves at once and can be pressed again at once; Home Assistant has the
+    // last word a moment later. "on" or "off" (not "toggle"), so quick presses never
+    // end up the wrong way round.
+    const target = c.mode === 'toggle' ? !c.on : true
+    pending[c.row] = target
+    clearTimeout(letGo[c.row])
+    letGo[c.row] = setTimeout(() => {
+      delete pending[c.row]
+      void app.refreshWidgets()
+    }, 2500)
     try {
-      const r = await api.widgetCommand(widget.id, c.row, c.mode === 'trigger' ? 'trigger' : 'toggle')
+      const r = await api.widgetCommand(widget.id, c.row, c.mode === 'trigger' ? 'trigger' : target ? 'on' : 'off')
       const wd = app.widgetData[widget.id]
       if (r.entity && wd?.data.entities) wd.data.entities[r.entity.id] = r.entity
     } catch (err) {
+      clearTimeout(letGo[c.row])
       delete pending[c.row]
       app.notify(`${l.label}: ${(err as Error).message}`, true)
       return
     }
-    // Some devices answer a moment after Home Assistant does: read again, then let go.
+    // Some devices answer a moment after Home Assistant does: read again.
     setTimeout(() => void app.refreshWidgets(), 900)
-    setTimeout(() => {
-      delete pending[c.row]
-      void app.refreshWidgets()
-    }, 2500)
   }
 
   // One or more lines per row (a disk row without a disk expands to all of them).
@@ -730,6 +741,26 @@
   }
 </script>
 
+{#snippet ctrl(r: Line)}
+  {#if r.ctl}
+    {#if r.ctl.mode === 'toggle'}
+      <button
+        type="button"
+        class="sw"
+        class:on={r.ctl.on}
+        role="switch"
+        aria-checked={r.ctl.on}
+        aria-label={`${r.label}: ${r.ctl.on ? 'on' : 'off'}`}
+        disabled={preview || editable || !r.ctl.usable}
+        onclick={(e) => press(r, e)}
+        onkeydown={(e) => e.stopPropagation()}
+      ><i></i></button>
+    {:else}
+      <button type="button" class="run" disabled={preview || editable || r.ctl.busy} onclick={(e) => press(r, e)} onkeydown={(e) => e.stopPropagation()}>{r.ctl.busy ? 'Sent' : 'Run'}</button>
+    {/if}
+  {/if}
+{/snippet}
+
 {#snippet body()}
   <div class="head">
     <h3>{widget.name}</h3>
@@ -752,7 +783,11 @@
       {#each brief as c (c.key)}
         <div class="mrow" class:bad={c.bad} title={c.title ? `${c.label}: ${c.title}` : c.label}>
           <dt>{c.label}</dt>
-          <dd>{c.value}</dd>
+          {#if c.ctl}
+            <dd class="ctl">{@render ctrl(c)}</dd>
+          {:else}
+            <dd>{c.value}</dd>
+          {/if}
         </div>
       {/each}
     </dl>
@@ -760,7 +795,11 @@
     <div class="brief">
       {#each brief as c (c.key)}
         <div class="cell" class:bad={c.bad} title={c.title ? `${c.label}: ${c.title}` : c.label}>
-          <b>{c.value}</b>
+          {#if c.ctl}
+            <b class="ctl">{@render ctrl(c)}</b>
+          {:else}
+            <b>{c.value}</b>
+          {/if}
           <span>{c.label}</span>
         </div>
       {/each}
@@ -773,20 +812,7 @@
           {#if r.ctl}
             <dd class="ctl" class:bad={r.bad}>
               {#if r.value}<span>{r.value}</span>{/if}
-              {#if r.ctl.mode === 'toggle'}
-                <button
-                  type="button"
-                  class="sw"
-                  class:on={r.ctl.on}
-                  role="switch"
-                  aria-checked={r.ctl.on}
-                  aria-label={`${r.label}: ${r.ctl.on ? 'on' : 'off'}`}
-                  disabled={preview || editable || !r.ctl.usable}
-                  onclick={() => press(r)}
-                ><i></i></button>
-              {:else}
-                <button type="button" class="run" disabled={preview || editable || r.ctl.busy} onclick={() => press(r)}>{r.ctl.busy ? 'Sent' : 'Run'}</button>
-              {/if}
+              {@render ctrl(r)}
             </dd>
           {:else}
             <dd class:bad={r.bad}>{r.value}</dd>
@@ -1070,6 +1096,20 @@
   }
   dd.bad {
     color: var(--down);
+  }
+  .cell b.ctl {
+    display: grid;
+    justify-items: center;
+    padding: 1px 0;
+  }
+  /* A strip that has switches: every row is as tall as a switch, so they line up. */
+  .mini:has(.ctl) .mrow {
+    align-items: center;
+    min-height: 24px;
+  }
+  .mrow dd.ctl {
+    display: flex;
+    align-items: center;
   }
   dd.ctl {
     display: flex;
