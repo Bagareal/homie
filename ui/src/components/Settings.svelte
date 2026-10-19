@@ -6,6 +6,7 @@
   import { isBuiltin, isModified } from '../lib/themes'
   import type { Config, Settings } from '../lib/types'
   import ColorField from './ColorField.svelte'
+  import SecuritySettings from './SecuritySettings.svelte'
   import Slider from './Slider.svelte'
   import { view } from '../lib/collapse.svelte'
   import { loadUpdates, newer, updates } from '../lib/updates.svelte'
@@ -16,7 +17,7 @@
   let version = $state('')
   let fileInput: HTMLInputElement | undefined = $state()
   let bgInput: HTMLInputElement | undefined = $state()
-  let tab = $state<'appearance' | 'general' | 'backup'>('appearance')
+  let tab = $state<'appearance' | 'general' | 'security' | 'backup'>('appearance')
 
   onMount(() => {
     api.getVersion().then((v) => (version = v.version)).catch(() => {})
@@ -169,6 +170,7 @@
   const tabs = [
     ['appearance', 'Appearance'],
     ['general', 'General'],
+    ['security', 'Security'],
     ['backup', 'Backup'],
   ] as const
   const themes = [
@@ -400,6 +402,8 @@
         Widgets collapse when the window is narrower than this (0 = never). This window is {view.width} px wide. Each widget has a button to collapse it, and the one in the top bar collapses them all; what you choose by hand is remembered on this device. A collapsed widget shows up to four values (choose them in the widget's Values tab).
       </small>
     </section>
+  {:else if tab === 'security'}
+    <SecuritySettings />
   {:else}
     <section>
       <h2>Configuration backup</h2>

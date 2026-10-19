@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/Bagareal/homie/internal/config"
@@ -25,6 +26,29 @@ func newTestServer(t *testing.T) *Server {
 	}
 	checker := status.New(store)
 	return New(store, checker, nil, dir, "test")
+}
+
+var testCookies sync.Map // *Server -> the session of the account made for it
+
+// authed is the handler of a server, with a signed-in session on every request.
+// The login itself is tested in auth_test.go, against s.Handler().
+func authed(s *Server) http.Handler {
+	v, ok := testCookies.Load(s)
+	if !ok {
+		tok, err := s.auth.Setup("tester", "a-long-test-password", "", "test")
+		if err != nil { // two servers on one folder: the account exists
+			tok, err = s.auth.Login("tester", "a-long-test-password", "test")
+		}
+		if err != nil {
+			panic(err)
+		}
+		v, _ = testCookies.LoadOrStore(s, tok)
+	}
+	h := s.Handler()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.AddCookie(&http.Cookie{Name: cookieName, Value: v.(string)})
+		h.ServeHTTP(w, r)
+	})
 }
 
 func doJSON(t *testing.T, h http.Handler, method, path string, body any) *httptest.ResponseRecorder {
@@ -46,7 +70,7 @@ func doJSON(t *testing.T, h http.Handler, method, path string, body any) *httpte
 
 func TestGetConfigReturnsDefault(t *testing.T) {
 	s := newTestServer(t)
-	w := doJSON(t, s.Handler(), "GET", "/api/config", nil)
+	w := doJSON(t, authed(s), "GET", "/api/config", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("got %d, body %s", w.Code, w.Body.String())
 	}
@@ -54,7 +78,7 @@ func TestGetConfigReturnsDefault(t *testing.T) {
 
 func TestPutConfigSavesAndReturnsIt(t *testing.T) {
 	s := newTestServer(t)
-	h := s.Handler()
+	h := authed(s)
 	body := map[string]any{
 		"title":    "My dashboard",
 		"settings": map[string]any{"theme": "auto", "density": "comfortable", "checkInterval": 60, "openInNewTab": true},
@@ -74,7 +98,7 @@ func TestPutConfigSavesAndReturnsIt(t *testing.T) {
 
 func TestPutConfigMigratesLegacyGroupsShapeWithWidgets(t *testing.T) {
 	s := newTestServer(t)
-	h := s.Handler()
+	h := authed(s)
 
 	legacy := map[string]any{
 		"title":    "Old export",
@@ -100,7 +124,7 @@ func TestPutConfigMigratesLegacyGroupsShapeWithWidgets(t *testing.T) {
 
 func TestPutConfigMigratesV06BlocksShape(t *testing.T) {
 	s := newTestServer(t)
-	h := s.Handler()
+	h := authed(s)
 
 	legacy := map[string]any{
 		"title":    "v0.6.x export",
@@ -131,7 +155,7 @@ func putWidget(t *testing.T, s *Server, glancesURL, password string) {
 		ID: "w1", Name: "Proxmox", URL: glancesURL, Username: "glances", Password: password,
 		Rows: []config.Row{{ID: "r1", Type: "cpu", Load: true}}, Refresh: 5, Cols: 1, HeightUnits: 1,
 	}}
-	if w := doJSON(t, s.Handler(), "PUT", "/api/config", cfg); w.Code != http.StatusOK {
+	if w := doJSON(t, authed(s), "PUT", "/api/config", cfg); w.Code != http.StatusOK {
 		t.Fatalf("put widget: %d %s", w.Code, w.Body.String())
 	}
 }
@@ -162,7 +186,7 @@ func TestWidgetPasswordNeverReachesTheBrowser(t *testing.T) {
 	putWidget(t, s, g.URL, "s3cret")
 
 	for _, path := range []string{"/api/config"} {
-		w := doJSON(t, s.Handler(), "GET", path, nil)
+		w := doJSON(t, authed(s), "GET", path, nil)
 		if bytes.Contains(w.Body.Bytes(), []byte("s3cret")) {
 			t.Fatalf("GET %s leaks the password: %s", path, w.Body.String())
 		}
@@ -171,7 +195,7 @@ func TestWidgetPasswordNeverReachesTheBrowser(t *testing.T) {
 		}
 	}
 	// The response to the save itself must not leak it either.
-	w := doJSON(t, s.Handler(), "PUT", "/api/config", s.store.Get().Redacted())
+	w := doJSON(t, authed(s), "PUT", "/api/config", s.store.Get().Redacted())
 	if bytes.Contains(w.Body.Bytes(), []byte("s3cret")) {
 		t.Fatal("PUT response leaks the password")
 	}
@@ -185,7 +209,7 @@ func TestGetWidgetsReadsTheHost(t *testing.T) {
 	g := fakeGlances(t)
 	putWidget(t, s, g.URL, "s3cret")
 
-	w := doJSON(t, s.Handler(), "GET", "/api/widgets", nil)
+	w := doJSON(t, authed(s), "GET", "/api/widgets", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("got %d, body %s", w.Code, w.Body.String())
 	}
@@ -207,7 +231,7 @@ func TestTestWidgetUsesTheStoredPasswordOnlyForTheSameAddress(t *testing.T) {
 	s := newTestServer(t)
 	g := fakeGlances(t)
 	putWidget(t, s, g.URL, "s3cret")
-	h := s.Handler()
+	h := authed(s)
 
 	type reply struct {
 		OK      bool   `json:"ok"`
@@ -273,7 +297,7 @@ func TestMetricsOfForTrueNAS(t *testing.T) {
 
 func TestBackgroundsStayWhileAThemeUsesThem(t *testing.T) {
 	s := newTestServer(t)
-	h := s.Handler()
+	h := authed(s)
 	dir := filepath.Join(s.dataDir, "backgrounds")
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		t.Fatal(err)
@@ -341,7 +365,7 @@ func newIconTestServer(t *testing.T) (*Server, *int) {
 
 func TestIconsAreDownloadedOnceAndKept(t *testing.T) {
 	s, hits := newIconTestServer(t)
-	h := s.Handler()
+	h := authed(s)
 	for i := 0; i < 3; i++ {
 		w := doJSON(t, h, "GET", "/cdn/dashboard-icons/png/proxmox.png", nil)
 		if w.Code != http.StatusOK || w.Body.String() != "PNGDATA" || w.Header().Get("Content-Type") != "image/png" {
@@ -358,7 +382,7 @@ func TestIconsAreDownloadedOnceAndKept(t *testing.T) {
 
 func TestIconThatDoesNotExistIsNotAskedAgain(t *testing.T) {
 	s, hits := newIconTestServer(t)
-	h := s.Handler()
+	h := authed(s)
 	for i := 0; i < 3; i++ {
 		if w := doJSON(t, h, "GET", "/cdn/dashboard-icons/png/nothing.png", nil); w.Code != http.StatusNotFound {
 			t.Fatalf("got %d", w.Code)
@@ -371,7 +395,7 @@ func TestIconThatDoesNotExistIsNotAskedAgain(t *testing.T) {
 
 func TestIconIndexIsCachedAndOnlyKnownFilesAreFetched(t *testing.T) {
 	s, hits := newIconTestServer(t)
-	h := s.Handler()
+	h := authed(s)
 	if w := doJSON(t, h, "GET", "/cdn/dashboard-icons/index/tree.json", nil); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "proxmox") {
 		t.Fatalf("index: %d %q", w.Code, w.Body.String())
 	}
@@ -396,7 +420,7 @@ func TestIconIndexIsCachedAndOnlyKnownFilesAreFetched(t *testing.T) {
 func TestIconUnreachableCDNGivesBadGatewayThenRecovers(t *testing.T) {
 	s := newTestServer(t)
 	s.icons.origins = map[string][]string{"dashboard-icons": {"http://127.0.0.1:1"}}
-	if w := doJSON(t, s.Handler(), "GET", "/cdn/dashboard-icons/png/proxmox.png", nil); w.Code != http.StatusBadGateway {
+	if w := doJSON(t, authed(s), "GET", "/cdn/dashboard-icons/png/proxmox.png", nil); w.Code != http.StatusBadGateway {
 		t.Errorf("got %d, want 502", w.Code)
 	}
 }
@@ -423,7 +447,7 @@ func TestMetricsOfForProxmox(t *testing.T) {
 func TestExtraGlancesSourceIsMergedAndItsPasswordKept(t *testing.T) {
 	s := newTestServer(t)
 	g := fakeGlances(t)
-	h := s.Handler()
+	h := authed(s)
 	put := func(extraPassword string) *httptest.ResponseRecorder {
 		cfg := s.store.Get().Redacted()
 		cfg.Widgets = []config.Widget{{
@@ -471,7 +495,7 @@ func TestExtraGlancesSourceIsMergedAndItsPasswordKept(t *testing.T) {
 func TestTestWidgetCanTestOnlyTheGlancesSource(t *testing.T) {
 	s := newTestServer(t)
 	g := fakeGlances(t)
-	h := s.Handler()
+	h := authed(s)
 	var r struct {
 		OK    bool `json:"ok"`
 		Extra struct {
@@ -532,7 +556,7 @@ func fakeUPSD(t *testing.T) string {
 func TestUPSExtraSourceIsMerged(t *testing.T) {
 	s := newTestServer(t)
 	addr := fakeUPSD(t)
-	h := s.Handler()
+	h := authed(s)
 	cfg := s.store.Get().Redacted()
 	cfg.Widgets = []config.Widget{{
 		ID: "w1", Name: "Pi", Kind: "truenas", URL: "https://127.0.0.1:1",
@@ -590,7 +614,7 @@ func TestReleasesAreReadOnlyWhenTheCheckIsOnAndTheBuildIsReal(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := New(store, status.New(store), nil, dir, "v1.1.0").WithReleasesURL(gh.URL)
-	h := s.Handler()
+	h := authed(s)
 	type reply struct {
 		Current  string `json:"current"`
 		Enabled  bool   `json:"enabled"`
@@ -627,7 +651,7 @@ func TestReleasesAreReadOnlyWhenTheCheckIsOnAndTheBuildIsReal(t *testing.T) {
 	cfg.Settings.NoUpdateCheck = false
 	_ = store.Set(cfg)
 	var r reply
-	_ = json.Unmarshal(doJSON(t, dev.Handler(), "GET", "/api/releases", nil).Body.Bytes(), &r)
+	_ = json.Unmarshal(doJSON(t, authed(dev), "GET", "/api/releases", nil).Body.Bytes(), &r)
 	if r.Enabled || len(r.Releases) != 0 {
 		t.Errorf("a dev build should not check: %+v", r)
 	}

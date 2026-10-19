@@ -1,7 +1,8 @@
 <script lang="ts">
+  import * as api from '../lib/api'
   import { app } from '../lib/state.svelte'
   import { ago, bytes, duration, percent, rate } from '../lib/format'
-  import type { HostData, Row, RowType, Widget, WidgetData } from '../lib/types'
+  import type { HAEntity, HostData, Row, RowType, Widget, WidgetData } from '../lib/types'
   import EditIcon from './EditIcon.svelte'
   import { isCollapsed, setCollapsed } from '../lib/collapse.svelte'
   import { arrange } from '../lib/arrange.svelte'
@@ -52,7 +53,17 @@
       .join(';'),
   )
 
-  type Line = { key: string; label: string; value: string; pct?: number; hot?: boolean; bad?: boolean; title?: string }
+  // ctl: a Home Assistant value with a switch ("toggle") or a run button ("trigger").
+  type Line = {
+    key: string
+    label: string
+    value: string
+    pct?: number
+    hot?: boolean
+    bad?: boolean
+    title?: string
+    ctl?: { row: string; mode: 'toggle' | 'trigger'; on: boolean; busy: boolean; usable: boolean }
+  }
 
   const labels: Record<RowType, string> = {
     cpu: 'CPU',
@@ -88,6 +99,7 @@
     tasks: 'Failed tasks',
     datastore: 'Datastore',
     group: 'Backup group',
+    entity: 'Entity',
   }
 
   // ups.status is a list of flags: OL OB LB CHRG DISCHRG RB ...
@@ -164,11 +176,115 @@
     })
   }
 
+
+  // ---- Home Assistant
+
+  // What a binary sensor says for on / off, by its device class.
+  const BINARY: Record<string, [string, string]> = {
+    door: ['Open', 'Closed'],
+    window: ['Open', 'Closed'],
+    opening: ['Open', 'Closed'],
+    garage_door: ['Open', 'Closed'],
+    motion: ['Motion', 'Clear'],
+    occupancy: ['Occupied', 'Clear'],
+    presence: ['Home', 'Away'],
+    moving: ['Moving', 'Stopped'],
+    moisture: ['Wet', 'Dry'],
+    smoke: ['Smoke', 'Clear'],
+    gas: ['Gas', 'Clear'],
+    carbon_monoxide: ['Detected', 'Clear'],
+    problem: ['Problem', 'OK'],
+    safety: ['Unsafe', 'Safe'],
+    tamper: ['Tampered', 'OK'],
+    connectivity: ['Connected', 'Disconnected'],
+    battery: ['Low', 'OK'],
+    cold: ['Cold', 'Normal'],
+    heat: ['Hot', 'Normal'],
+    light: ['Light', 'Dark'],
+    plug: ['Plugged in', 'Unplugged'],
+    power: ['Power', 'No power'],
+    running: ['Running', 'Stopped'],
+    update: ['Update available', 'Up to date'],
+    vibration: ['Vibration', 'Clear'],
+  }
+  // On is the bad side of these.
+  const ALARM = new Set(['smoke', 'gas', 'carbon_monoxide', 'problem', 'safety', 'tamper', 'moisture', 'battery', 'cold', 'heat'])
+  // The domains that have a switch (the same list as the server's).
+  const SWITCHES = new Set(['light', 'switch', 'input_boolean', 'fan', 'automation'])
+  const TRIGGERS = new Set(['scene', 'script', 'button', 'input_button'])
+
+  const trim = (n: number) => String(parseFloat(n.toFixed(Math.abs(n) >= 100 ? 0 : Math.abs(n) >= 10 ? 1 : 2)))
+  const withUnit = (text: string, unit?: string) => (unit ? `${text}${unit === '%' ? '' : ' '}${unit}` : text)
+
+  // Switches pressed and not yet confirmed by Home Assistant: the value they will have.
+  let pending = $state<Record<string, boolean>>({})
+
+  function haLine(r: Row, d: HostData): Line {
+    const e: HAEntity | undefined = d.entities?.[r.key ?? '']
+    const label = r.name || e?.name || r.key || labels.entity
+    if (!e) return { key: r.id, label, value: 'n/a' }
+    if (e.missing) return { key: r.id, label, value: 'not found', bad: true, title: `${r.key} does not exist in Home Assistant any more (renamed or deleted?)` }
+    const domain = e.id.split('.')[0]
+    const title = `${e.id}: ${e.state}`
+    const gone = e.state === 'unavailable' || e.state === 'unknown'
+    const line: Line = { key: r.id, label, value: e.state, title, bad: gone }
+
+    if (r.control && TRIGGERS.has(domain)) {
+      return { ...line, value: '', bad: false, ctl: { row: r.id, mode: 'trigger', on: false, busy: pending[r.id] !== undefined, usable: true } }
+    }
+    if (SWITCHES.has(domain)) {
+      const on = pending[r.id] ?? e.state === 'on'
+      const text = gone ? e.state : on ? (domain === 'light' && e.brightness !== undefined && pending[r.id] === undefined ? `On · ${e.brightness}%` : 'On') : 'Off'
+      const out: Line = { ...line, value: text }
+      if (r.control) out.ctl = { row: r.id, mode: 'toggle', on, busy: pending[r.id] !== undefined, usable: !gone }
+      return out
+    }
+    if (domain === 'binary_sensor') {
+      const [yes, no] = BINARY[e.class ?? ''] ?? ['On', 'Off']
+      const on = e.state === 'on'
+      const bad = gone || (ALARM.has(e.class ?? '') ? on : e.class === 'connectivity' ? !on : false)
+      return { ...line, value: gone ? e.state : on ? yes : no, bad }
+    }
+    const n = Number(e.state)
+    if (!gone && e.state.trim() !== '' && Number.isFinite(n)) {
+      const pct = e.unit === '%' ? n : undefined
+      return { ...line, value: withUnit(trim(n), e.unit), pct, hot: pct !== undefined && e.class === 'battery' && n <= 20 }
+    }
+    if (e.class === 'timestamp' && !gone && !Number.isNaN(Date.parse(e.state))) return { ...line, value: ago(e.state) || e.state }
+    return { ...line, value: withUnit(e.state, e.unit) }
+  }
+
+  async function press(l: Line) {
+    const c = l.ctl
+    if (!c || c.busy || !c.usable || preview || editable) return
+    // The switch moves at once; Home Assistant has the last word a moment later.
+    pending[c.row] = c.mode === 'toggle' ? !c.on : true
+    try {
+      const r = await api.widgetCommand(widget.id, c.row, c.mode === 'trigger' ? 'trigger' : 'toggle')
+      const wd = app.widgetData[widget.id]
+      if (r.entity && wd?.data.entities) wd.data.entities[r.entity.id] = r.entity
+    } catch (err) {
+      delete pending[c.row]
+      app.notify(`${l.label}: ${(err as Error).message}`, true)
+      return
+    }
+    // Some devices answer a moment after Home Assistant does: read again, then let go.
+    setTimeout(() => void app.refreshWidgets(), 900)
+    setTimeout(() => {
+      delete pending[c.row]
+      void app.refreshWidgets()
+    }, 2500)
+  }
+
   // One or more lines per row (a disk row without a disk expands to all of them).
   const lines = $derived.by((): Line[] => {
     if (!data?.online) return []
     const out: Line[] = []
     for (const r of widget.rows) {
+      if (widget.kind === 'homeassistant') {
+        out.push(haLine(r, data.data))
+        continue
+      }
       const label = r.name || labels[r.type]
       // Rows of the extra Glances source read their own data (a cluster has one per node).
       const fromGlances = r.source === 'glances'
@@ -654,7 +770,27 @@
       {#each lines as r (r.key)}
         <div class="row" title={r.title}>
           <dt>{r.label}</dt>
-          <dd class:bad={r.bad}>{r.value}</dd>
+          {#if r.ctl}
+            <dd class="ctl" class:bad={r.bad}>
+              {#if r.value}<span>{r.value}</span>{/if}
+              {#if r.ctl.mode === 'toggle'}
+                <button
+                  type="button"
+                  class="sw"
+                  class:on={r.ctl.on}
+                  role="switch"
+                  aria-checked={r.ctl.on}
+                  aria-label={`${r.label}: ${r.ctl.on ? 'on' : 'off'}`}
+                  disabled={preview || editable || !r.ctl.usable}
+                  onclick={() => press(r)}
+                ><i></i></button>
+              {:else}
+                <button type="button" class="run" disabled={preview || editable || r.ctl.busy} onclick={() => press(r)}>{r.ctl.busy ? 'Sent' : 'Run'}</button>
+              {/if}
+            </dd>
+          {:else}
+            <dd class:bad={r.bad}>{r.value}</dd>
+          {/if}
           {#if r.pct !== undefined}
             <div class="meter" role="presentation"><span class:hot={r.hot} style:width="{Math.min(100, Math.max(0, r.pct))}%"></span></div>
           {/if}
@@ -935,6 +1071,62 @@
   dd.bad {
     color: var(--down);
   }
+  dd.ctl {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    overflow: visible;
+  }
+  /* A switch: a pill that follows the bar color when it is on. */
+  .sw {
+    position: relative;
+    flex: none;
+    width: 34px;
+    height: 20px;
+    padding: 0;
+    border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+    border-radius: 10px;
+    background: color-mix(in srgb, currentColor 14%, transparent);
+    transition: background 0.2s ease;
+  }
+  .sw i {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.75;
+    transition: transform 0.2s ease;
+  }
+  .sw.on {
+    background: var(--w-bar, var(--widget-bar));
+    border-color: var(--w-bar, var(--widget-bar));
+  }
+  .sw.on i {
+    transform: translateX(14px);
+    background: #fff;
+    opacity: 1;
+  }
+  .sw:hover:not(:disabled) {
+    background: color-mix(in srgb, currentColor 22%, transparent);
+  }
+  .sw.on:hover:not(:disabled) {
+    background: var(--w-bar, var(--widget-bar));
+    filter: brightness(1.1);
+  }
+  .sw:disabled,
+  .run:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+  .run {
+    padding: 2px 12px;
+    font-size: 0.8rem;
+    border-color: color-mix(in srgb, currentColor 35%, transparent);
+  }
   .meter {
     grid-column: 1 / -1;
     height: 5px;
@@ -961,7 +1153,9 @@
     opacity: 1;
   }
   @media (prefers-reduced-motion: reduce) {
-    .meter span {
+    .meter span,
+    .sw,
+    .sw i {
       transition: none;
     }
   }

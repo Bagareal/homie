@@ -2,7 +2,7 @@
 
 A homelab dashboard: all your services in one place, organized into groups and managed entirely from the web interface. Add, edit, delete, and reorder services and groups by dragging them, without touching any configuration files.
 
-Designed to run in an LXC container on Proxmox VE and to be used on a local network only: it has no login.
+Designed to run in an LXC container on Proxmox VE and to be used on a local network (or through a VPN). It has a **login** (user name and password, remembered by the browser, with an optional fingerprint or face lock for the phone app): see [docs/security.md](docs/security.md).
 
 ## Installing on Proxmox
 
@@ -30,7 +30,7 @@ Or from the Proxmox host, without entering the container:
 pct exec <ID> -- update
 ```
 
-It downloads the latest release and restarts the service; your configuration is left untouched. It installs the latest published GitHub Release, so a change only reaches you once a release has been published; if it says you are already up to date right after one appeared, try again in a minute.
+It downloads the latest release and restarts the service; your configuration is left untouched. The first time you open Homie after updating from a version without a login, it asks you to create the account: do it right away. It installs the latest published GitHub Release, so a change only reaches you once a release has been published; if it says you are already up to date right after one appeared, try again in a minute.
 
 ## Where the data lives
 
@@ -64,12 +64,13 @@ The backend periodically runs an active check on each service (interval set in S
 
 ## Widgets
 
-A widget is a standalone block, separate from the groups, that shows live numbers from one of your hosts. Four kinds exist so far, each with its own setup guide:
+A widget is a standalone block, separate from the groups, that shows live numbers from one of your hosts. Six kinds exist so far, each with its own setup guide:
 
 - **Glances**: CPU, memory, swap, load, uptime, temperatures, disks and network traffic of any Linux host (a Proxmox node, for example). Guide: [docs/widgets-glances.md](docs/widgets-glances.md) (installing Glances and keeping it running).
 - **Proxmox VE**: LXC and VM counts, single guests, nodes, storages, last backup, cluster quorum and failed tasks, for one node or a whole cluster. Guide: [docs/widgets-proxmox.md](docs/widgets-proxmox.md) (creating a read-only API token).
 - **Proxmox Backup Server**: datastore space, how long ago each VM/container was last backed up, the latest backup, failed tasks and the server's load. Guide: [docs/widgets-pbs.md](docs/widgets-pbs.md).
 - **TrueNAS**: pools, alerts, apps, drive temperatures, CPU, memory, uptime. Guide: [docs/widgets-truenas.md](docs/widgets-truenas.md) (creating a read-only user and an API key, and what to avoid).
+- **Home Assistant**: the sensors you choose (temperatures, power, doors…) and, if you want, switches for lights, plugs and scenes. Guide: [docs/widgets-homeassistant.md](docs/widgets-homeassistant.md) (creating the access token, and what can and cannot be switched).
 - **UPS (NUT)**: status, battery charge, runtime, load, power, voltage and which machines are connected, each marked primary or secondary. Guide: [docs/widgets-nut.md](docs/widgets-nut.md) (letting `upsd` accept Homie, and naming the clients).
 
 A Proxmox, TrueNAS or UPS widget can also read the same machine's **Glances** (tick "Also read this machine's Glances" in the Source tab): temperatures, disks and network then sit in the same block, one widget per machine. On a cluster, each node can have its own Glances address. In the same way a Glances, Proxmox or TrueNAS widget can read the machine's **UPS** ("Also read this machine's UPS"), so a machine that runs NUT and does other things too needs one widget only.
@@ -81,6 +82,10 @@ The editor has four tabs (Source, Values, Size, Appearance) with the preview alw
 **Collapsing widgets.** Every widget has a small arrow in its header that collapses it to a single line with up to four values (each with its name in small print underneath); the button "Collapse widgets" in the top bar collapses or opens them all. In the widget's Values tab, tick "Collapsed" on the values to keep (none ticked: the first four). Settings → General can collapse them automatically when the window is narrower than a width you choose, so a laptop screen starts compact while a big monitor shows everything. What you collapse or open by hand is remembered per device (in the browser), not in the shared configuration, and never applies on a phone, which has its own Widgets tab.
 
 Homie's server reads the hosts, not your browser, so a host only has to be reachable from Homie's container. Each address has a Port field next to it with the default in grey (Glances 61208, Proxmox VE 8006, UPS 3493): leave it empty, or type your own if you changed it. Each address needs its scheme (Glances `http://`, Proxmox VE `https://`, UPS `nut://`), and a name that goes through a reverse proxy usually does not reach the host's own ports: see [Which address to enter](docs/widgets-glances.md#which-address-to-enter). Passwords and API keys are stored only on the server: they are never sent back to the browser, are not included in exported backups, and changing a widget's address or username removes them.
+
+## Login
+
+Homie asks for a user name and a password (created the first time you open it), and keeps a device signed in for 30 days after its last use. Forgot it: run `homie-reset-password` in the container. On a phone you can add a biometric lock to the installed app. Everything is explained in [docs/security.md](docs/security.md).
 
 ## Updates
 
@@ -127,10 +132,13 @@ internal/glances/       reads host metrics from the Glances API (widgets)
 internal/truenas/       reads a TrueNAS system over its JSON-RPC WebSocket API (widgets)
 internal/nut/           reads a UPS from a NUT server (widgets)
 internal/proxmox/       reads a Proxmox VE node or cluster through its API (widgets)
+internal/pbs/           reads a Proxmox Backup Server through its API (widgets)
+internal/homeassistant/ reads and switches Home Assistant entities through its REST API (widgets)
+internal/auth/          login: account, sessions, passkeys (biometric lock), password recovery
 internal/server/        HTTP API and pages
 internal/webui/         compiled interface, embedded in the binary
 ui/                     interface (Svelte 5, TypeScript, Vite)
-docs/                   widget setup guides (Glances, TrueNAS)
+docs/                   widget setup guides, and how the login works
 scripts/setup.sh        install and update inside the LXC
 install.sh              installer for the Proxmox host
 ```
@@ -159,13 +167,16 @@ GitHub Actions builds the interface and the binaries and creates the release wit
 
 ## API
 
+All of these need a signed-in session (the cookie set by `/api/auth/login`); `/api/auth/*` is the login itself (status, setup, login, logout, password, devices, passkeys).
+
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | `/api/config` | Full configuration |
 | PUT | `/api/config` | Replaces the configuration (validated) |
 | GET | `/api/status` | Latest status of every checked service |
 | GET | `/api/widgets` | Latest readings of every widget (cached for half the refresh interval) |
-| POST | `/api/widgets/test` | Checks a Glances address from the editor |
+| POST | `/api/widgets/test` | Checks a widget's address (and login) from the editor |
+| POST | `/api/widgets/{id}/command` | Switches a Home Assistant row that was given a switch (`{row, action}`) |
 | GET | `/api/version` | Running version |
 | GET | `/api/releases` | Released versions with their notes (read from GitHub by the server, cached for hours; `?refresh=1` asks again, at most once a minute) |
 

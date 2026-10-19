@@ -79,8 +79,8 @@ export interface SavedTheme {
   widgets?: Record<string, WidgetStyle>
 }
 
-export type WidgetKind = 'glances' | 'truenas' | 'nut' | 'proxmox' | 'pbs'
-export type RowType = 'cpu' | 'mem' | 'swap' | 'load' | 'uptime' | 'temp' | 'disk' | 'network' | 'version' | 'pool' | 'drive' | 'alerts' | 'apps' | 'status' | 'charge' | 'runtime' | 'upsload' | 'power' | 'voltage' | 'model' | 'var' | 'clients' | 'client' | 'nodes' | 'lxc' | 'vm' | 'guest' | 'storage' | 'backup' | 'quorum' | 'tasks' | 'datastore' | 'group'
+export type WidgetKind = 'glances' | 'truenas' | 'nut' | 'proxmox' | 'pbs' | 'homeassistant'
+export type RowType = 'cpu' | 'mem' | 'swap' | 'load' | 'uptime' | 'temp' | 'disk' | 'network' | 'version' | 'pool' | 'drive' | 'alerts' | 'apps' | 'status' | 'charge' | 'runtime' | 'upsload' | 'power' | 'voltage' | 'model' | 'var' | 'clients' | 'client' | 'nodes' | 'lxc' | 'vm' | 'guest' | 'storage' | 'backup' | 'quorum' | 'tasks' | 'datastore' | 'group' | 'entity'
 
 // One line of a widget. `key` picks a disk (mount point), sensor (label),
 // network card, pool or drive (name); empty = all of them, or the CPU sensor /
@@ -103,6 +103,9 @@ export interface Row {
   // (of a Proxmox cluster, `node` says which node's Glances).
   source?: 'glances' | 'nut'
   node?: string
+  // Home Assistant rows (`key` is the entity id): show a switch, or a run button for a
+  // scene, script or button, that sends the command.
+  control?: boolean
 }
 
 // An extra source of a widget (Glances). Like the main one, its password is write-only.
@@ -154,6 +157,19 @@ export interface Usage {
   percent: number
   used: number
   total: number
+}
+
+// One Home Assistant entity, as the server reads it.
+export interface HAEntity {
+  id: string
+  state: string
+  name?: string
+  unit?: string
+  class?: string
+  // A light's brightness, in percent.
+  brightness?: number
+  // Home Assistant does not know this id any more.
+  missing?: boolean
 }
 
 export interface HostData {
@@ -216,6 +232,10 @@ export interface HostData {
   glancesNodes?: Record<string, HostData>
   // The extra UPS source of the widget (same shape as a UPS widget's own data).
   nut?: HostData
+  // Home Assistant only: the entities the rows show, by id; and, in the editor, every
+  // entity there is (to pick from).
+  entities?: Record<string, HAEntity>
+  entityList?: HAEntity[]
 }
 
 export interface WidgetData {

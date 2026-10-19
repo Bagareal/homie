@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Bagareal/homie/internal/auth"
 	"github.com/Bagareal/homie/internal/config"
 	"github.com/Bagareal/homie/internal/status"
 	"github.com/Bagareal/homie/internal/updates"
@@ -46,13 +47,22 @@ type Server struct {
 	widgets *widgetCache
 	icons   *iconCache
 	updates *updates.Checker
+	// auth is the login. If its file cannot be read the server stays closed
+	// (authErr says why) instead of open.
+	auth    *auth.Manager
+	authErr error
 	// bgMu keeps the clean-up of background images from racing an upload.
 	bgMu sync.Mutex
 }
 
 func New(store *config.Store, checker *status.Checker, ui fs.FS, dataDir, version string) *Server {
-	return &Server{store: store, checker: checker, ui: ui, dataDir: dataDir, version: version, widgets: newWidgetCache(), icons: newIconCache(dataDir), updates: updates.New("")}
+	s := &Server{store: store, checker: checker, ui: ui, dataDir: dataDir, version: version, widgets: newWidgetCache(), icons: newIconCache(dataDir), updates: updates.New("")}
+	s.auth, s.authErr = auth.Open(dataDir)
+	return s
 }
+
+// AuthError is why the login could not be set up, if it could not.
+func (s *Server) AuthError() error { return s.authErr }
 
 // WithReleasesURL reads the versions from another address than GitHub's (for tests).
 func (s *Server) WithReleasesURL(url string) *Server {
@@ -62,13 +72,32 @@ func (s *Server) WithReleasesURL(url string) *Server {
 	return s
 }
 
+// Handler is the whole site, behind the login.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/auth/status", s.authStatus)
+	mux.HandleFunc("POST /api/auth/setup", s.authSetup)
+	mux.HandleFunc("POST /api/auth/login", s.authLogin)
+	mux.HandleFunc("POST /api/auth/logout", s.authLogout)
+	mux.HandleFunc("POST /api/auth/active", s.authActive)
+	mux.HandleFunc("POST /api/auth/hidden", s.authHidden)
+	mux.HandleFunc("POST /api/auth/password", s.authPassword)
+	mux.HandleFunc("GET /api/auth/devices", s.authDevices)
+	mux.HandleFunc("DELETE /api/auth/devices/{id}", s.authRevoke)
+	mux.HandleFunc("POST /api/auth/devices/others/revoke", s.authRevokeOthers)
+	mux.HandleFunc("POST /api/auth/passkey/register/begin", s.passkeyRegisterBegin)
+	mux.HandleFunc("POST /api/auth/passkey/register/finish", s.passkeyRegisterFinish)
+	mux.HandleFunc("POST /api/auth/passkey/assert/begin", s.passkeyAssertBegin)
+	mux.HandleFunc("POST /api/auth/passkey/assert/finish", s.passkeyAssertFinish)
+	mux.HandleFunc("DELETE /api/auth/passkeys/{id}", s.passkeyRemove)
+	mux.HandleFunc("POST /api/auth/lock/off", s.lockOff)
+	mux.HandleFunc("POST /api/auth/lock/after", s.lockAfter)
 	mux.HandleFunc("GET /api/config", s.getConfig)
 	mux.HandleFunc("PUT /api/config", s.putConfig)
 	mux.HandleFunc("GET /api/status", s.getStatus)
 	mux.HandleFunc("GET /api/widgets", s.getWidgets)
 	mux.HandleFunc("POST /api/widgets/test", s.testWidget)
+	mux.HandleFunc("POST /api/widgets/{id}/command", s.widgetCommand)
 	mux.HandleFunc("GET /api/version", s.getVersion)
 	mux.HandleFunc("GET /api/releases", s.getReleases)
 	mux.HandleFunc("GET /icons/{name}", s.icon)
@@ -77,7 +106,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/background", s.deleteBackground)
 	mux.HandleFunc("GET /backgrounds/{name}", s.background)
 	mux.HandleFunc("GET /", s.static)
-	return mux
+	return s.guard(mux)
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -135,7 +164,7 @@ func (s *Server) icon(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	w.Header().Set("Cache-Control", "public, max-age=86400")
+	w.Header().Set("Cache-Control", "private, max-age=86400")
 	http.ServeFile(w, r, filepath.Join(s.dataDir, "icons", name))
 }
 
@@ -249,7 +278,7 @@ func (s *Server) background(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
 	http.ServeFile(w, r, filepath.Join(s.dataDir, "backgrounds", name))
 }
 

@@ -52,10 +52,13 @@
     tasks: 'Failed tasks',
     datastore: 'Datastore',
     group: 'Backup group',
+    entity: 'Home Assistant entity',
   }
 
   const defaultRows = (kind: WidgetKind): Row[] =>
-    kind === 'pbs'
+    kind === 'homeassistant'
+      ? []
+      : kind === 'pbs'
       ? [
           { id: uid(), type: 'datastore' },
           { id: uid() + 'b', type: 'backup' },
@@ -148,9 +151,10 @@
   const ups = $derived(w.kind === 'nut')
   const pve = $derived(w.kind === 'proxmox')
   const pbs = $derived(w.kind === 'pbs')
+  const ha = $derived(w.kind === 'homeassistant')
   // Both Proxmox products log in with an API token.
   const token = $derived(pve || pbs)
-  const secretName = $derived(nas ? 'API key' : token ? 'token secret' : 'password')
+  const secretName = $derived(nas ? 'API key' : token ? 'token secret' : ha ? 'access token' : 'password')
   // Ticked: on save, this widget's look becomes the look of every widget.
   let shareLook = $state(false)
   const global = $derived(app.config!.settings)
@@ -172,7 +176,7 @@
 
   // TrueNAS is only ever reached over https (it revokes API keys sent without TLS).
   // The port each program listens on, used when the address has none (TrueNAS: 443, from https).
-  const DEFAULT_PORT: Record<WidgetKind, string> = { glances: '61208', proxmox: '8006', pbs: '8007', truenas: '', nut: '3493' }
+  const DEFAULT_PORT: Record<WidgetKind, string> = { glances: '61208', proxmox: '8006', pbs: '8007', truenas: '', nut: '3493', homeassistant: '8123' }
   const defaultPort = $derived(DEFAULT_PORT[w.kind])
 
   function normalizeUrl(raw: string): string {
@@ -282,7 +286,19 @@
       tasks: { failed: 0 },
     },
   }
-  const sample = $derived(pbs ? samplePBS : pve ? samplePVE : ups ? sampleUPS : nas ? sampleNAS : sampleGlances)
+  const sampleHA: WidgetData = {
+    online: true,
+    updatedAt: '',
+    data: {
+      entities: {
+        'sensor.server_power': { id: 'sensor.server_power', state: '68.2', name: 'Server power', unit: 'W', class: 'power' },
+        'sensor.living_room_temperature': { id: 'sensor.living_room_temperature', state: '21.4', name: 'Living room', unit: '°C', class: 'temperature' },
+        'light.desk': { id: 'light.desk', state: 'on', name: 'Desk lamp', brightness: 80 },
+        'binary_sensor.front_door': { id: 'binary_sensor.front_door', state: 'off', name: 'Front door', class: 'door' },
+      },
+    },
+  }
+  const sample = $derived(ha ? sampleHA : pbs ? samplePBS : pve ? samplePVE : ups ? sampleUPS : nas ? sampleNAS : sampleGlances)
   const live = $derived(widgetId ? app.widgetData[widgetId] : undefined)
   const previewData = $derived<WidgetData>(
     found
@@ -292,6 +308,8 @@
           // What the extra Glances source reported, so its rows preview with real values too.
           data: {
             ...found,
+            // Home Assistant: every entity the connection listed, by id.
+            entities: found.entityList ? Object.fromEntries(found.entityList.map((e) => [e.id, e])) : found.entities,
             glances: foundExtra?.glances?.data,
             nut: foundNut?.data,
             glancesNodes: Object.fromEntries(Object.entries(foundExtra?.nodes ?? {}).filter(([, p]) => p.data).map(([n, p]) => [n, p.data!])),
@@ -359,7 +377,7 @@
       }
       if (r.ok) {
         found = r.data ?? null
-        testResult = { ok: true, text: `Connected${r.version ? ` (${ups ? 'UPS: ' : nas || token ? '' : 'Glances '}${r.version})` : ''}` }
+        testResult = { ok: true, text: `Connected${r.version ? ` (${ups ? 'UPS: ' : nas || token || ha ? '' : 'Glances '}${r.version})` : ''}` }
       } else if (!silent) testResult = { ok: false, text: r.error ?? 'Failed' }
     } catch (e) {
       if (!silent) testResult = { ok: false, text: (e as Error).message }
@@ -512,6 +530,20 @@
     w.rows.push(row)
   }
 
+  // ---- Home Assistant
+
+  // The same list as the server's: only these can get a switch or a run button.
+  const CONTROLLABLE = new Set(['light', 'switch', 'input_boolean', 'fan', 'automation', 'scene', 'script', 'button', 'input_button'])
+  const controllable = (id: string | undefined) => CONTROLLABLE.has((id ?? '').split('.')[0])
+  const entityMap = $derived(new Map((found?.entityList ?? []).map((e) => [e.id, e])))
+  let entityQuery = $state('')
+
+  function addEntity(id: string) {
+    id = id.trim()
+    if (!entityMap.has(id)) return
+    w.rows.push({ id: uid(), type: 'entity', key: id })
+  }
+
   function setCpu(r: Row, part: 'load' | 'temp', on: boolean) {
     r[part] = on
     // A CPU row always shows something.
@@ -554,6 +586,7 @@
     } catch {
       return fail('source', `Enter a valid address, for example ${ups ? 'nut://192.168.1.10' : nas ? 'https://truenas.local' : 'http://192.168.1.10:61208'}.`)
     }
+    if (ha && !saved?.hasPassword && !w.password) return fail('source', 'Enter the long-lived access token (Home Assistant: your profile → Security → Long-lived access tokens).')
     if (w.rows.length === 0) return fail('values', 'Add at least one value to show.')
     if (w.rows.some((r) => r.type === 'client' && !(r.key ?? '').trim())) return fail('values', 'A client needs its address (the connected ones are listed once the connection is tested).')
     // The extra source: addresses tidied up; with nothing to read it is simply off.
@@ -684,19 +717,22 @@
             <option value="glances">Glances (any Linux host)</option>
             <option value="truenas">TrueNAS (25.04 or later)</option>
             <option value="nut">UPS (NUT server)</option>
+            <option value="homeassistant">Home Assistant (sensors and switches)</option>
           </select>
         </label>
       {/if}
       <label>
         Name
         <!-- svelte-ignore a11y_autofocus -->
-        <input bind:value={w.name} maxlength="60" placeholder={ups ? 'UPS' : nas ? 'TrueNAS' : pve ? 'Proxmox' : pbs ? 'Backups' : 'Server'} autofocus />
+        <input bind:value={w.name} maxlength="60" placeholder={ups ? 'UPS' : nas ? 'TrueNAS' : pve ? 'Proxmox' : pbs ? 'Backups' : ha ? 'Home' : 'Server'} autofocus />
       </label>
       <label>
-        {ups ? 'NUT server address' : nas ? 'TrueNAS address' : pve ? 'Proxmox VE address' : pbs ? 'Backup Server address' : 'Glances address'}
+        {ups ? 'NUT server address' : nas ? 'TrueNAS address' : pve ? 'Proxmox VE address' : pbs ? 'Backup Server address' : ha ? 'Home Assistant address' : 'Glances address'}
         <AddressInput bind:value={w.url} placeholder={ups ? 'nut://192.168.1.10' : nas ? 'https://truenas.local' : token ? 'https://192.168.1.10' : 'http://192.168.1.10'} port={defaultPort || '443'} />
         {#if pve}
           <small>Any node of the cluster (or the single node), port 8006: it answers for the whole cluster. The certificate is not checked, so Proxmox's own self-signed one works.</small>
+        {:else if ha}
+          <small>Where you open Home Assistant, for example <code>http://192.168.1.10:8123</code> (port 8123). The certificate is checked, so with https use an address that has a valid one.</small>
         {:else if pbs}
           <small>The Backup Server itself, port 8007. The certificate is not checked, so its own self-signed one works.</small>
         {:else if ups}
@@ -708,17 +744,19 @@
         {/if}
       </label>
       {#if !ups}
-      <div class="two">
+      <div class={ha ? '' : 'two'}>
+        {#if !ha}
         <label>
           {token ? 'API token ID' : 'Username'} <small>{token ? '' : nas ? '(only if the login is refused)' : '(optional)'}</small>
           <input bind:value={w.username} maxlength="100" autocomplete="off" placeholder={pbs ? 'backup@pbs!homie' : pve ? 'root@pam!homie' : ''} />
         </label>
+        {/if}
         <label>
-          {nas ? 'API key' : token ? 'API token secret' : 'Password'} {#if !nas && !token}<small>(optional)</small>{/if}
+          {ha ? 'Long-lived access token' : nas ? 'API key' : token ? 'API token secret' : 'Password'} {#if !nas && !token && !ha}<small>(optional)</small>{/if}
           <input
             type="password"
             bind:value={w.password}
-            maxlength="200"
+            maxlength={ha ? 2000 : 200}
             autocomplete="new-password"
             placeholder={saved?.hasPassword && !addressChanged ? '(saved, leave blank to keep)' : ''}
           />
@@ -732,7 +770,9 @@
           <label class="check"><input type="checkbox" bind:checked={w.clearPassword} /> Remove the saved {secretName}</label>
         {/if}
       {/if}
-      {#if pve}
+      {#if ha}
+        <small>Create the token in Home Assistant: your profile (bottom left) → Security → Long-lived access tokens → Create token. It is shown once; it is stored on the Homie server and never sent back to the browser. It gives full access to Home Assistant, so name it “Homie” and delete it there if you stop using Homie. Homie can only switch the entities you give a switch to below, and never locks, alarms, covers or garage doors.</small>
+      {:else if pve}
         <small>Create the token in Proxmox: Datacenter → Permissions → API Tokens → Add, for a user that has only the <code>PVEAuditor</code> role on <code>/</code> (with “Privilege Separation” on, give the role to the token itself too). The secret is shown once; it is stored on the Homie server and never sent back to the browser.</small>
       {:else if pbs}
         <small>Create the token in Proxmox Backup Server: Configuration → Access Control → API Token → Add, then under Permissions give the user <b>and</b> the token the <code>DatastoreAudit</code> role on <code>/datastore</code> and the <code>Audit</code> role on <code>/system</code>. The secret is shown once; it is stored on the Homie server and never sent back to the browser.</small>
@@ -747,7 +787,7 @@
         <button type="button" onclick={() => test()} disabled={testing}>{testing ? 'Testing…' : w.glances ? `Test ${pbs ? 'Backup Server' : pve ? 'Proxmox' : nas ? 'TrueNAS' : 'UPS'} connection` : 'Test connection'}</button>
         {#if testResult}<span class:ok={testResult.ok} class:bad={!testResult.ok} role="status">{testResult.text}</span>{/if}
       </div>
-      {#if w.kind !== 'glances'}
+      {#if w.kind !== 'glances' && !ha}
         <div class="extra">
           <label class="check">
             <input type="checkbox" checked={!!w.glances} onchange={(e) => toggleExtra(e.currentTarget.checked)} />
@@ -801,7 +841,7 @@
           {/if}
         </div>
       {/if}
-      {#if w.kind !== 'nut'}
+      {#if w.kind !== 'nut' && !ha}
         <div class="extra">
           <label class="check">
             <input type="checkbox" checked={!!w.nut} onchange={(e) => toggleNut(e.currentTarget.checked)} />
@@ -828,7 +868,7 @@
     </fieldset>
     {:else if tab === 'values'}
     <fieldset>
-      <small>Tick “Collapsed” on up to four values to show only those when the widget is collapsed (none ticked: the first four). Drag to reorder (or use the arrows). {pbs ? 'Datastores and backup groups' : pve ? 'Guests, storages and nodes' : ups ? 'Clients and other values' : nas ? 'Pools and drives' : 'Disks, sensors and network cards'} can be chosen once the connection has been tested.</small>
+      <small>Tick “Collapsed” on up to four values to show only those when the widget is collapsed (none ticked: the first four). Drag to reorder (or use the arrows). {ha ? 'Entities' : pbs ? 'Datastores and backup groups' : pve ? 'Guests, storages and nodes' : ups ? 'Clients and other values' : nas ? 'Pools and drives' : 'Disks, sensors and network cards'} can be chosen once the connection has been tested.</small>
       <ul class="rows">
         {#each w.rows as r, i (r.id)}
           {@const sd = srcData(r)}
@@ -862,7 +902,7 @@
             >
             <div class="rbody">
               <div class="rhead">
-                <strong>{typeLabels[r.type]}</strong>
+                <strong>{r.type === 'entity' ? entityMap.get(r.key ?? '')?.name || r.key : typeLabels[r.type]}</strong>
                 {#if r.source === 'glances'}<span class="tag">Glances{r.node ? ` · ${r.node}` : ''}</span>{:else if r.source === 'nut'}<span class="tag">UPS</span>{/if}
                 {#if r.type === 'cpu' && !(token && !r.source)}
                   <label class="check"><input type="checkbox" checked={r.load} onchange={(e) => setCpu(r, 'load', e.currentTarget.checked)} /> Load</label>
@@ -878,6 +918,12 @@
                         if (!r.temp) r.drive = undefined
                       }}
                     /> Temperature
+                  </label>
+                {/if}
+                {#if r.type === 'entity' && controllable(r.key)}
+                  <label class="check" title="Let anyone signed in to Homie control this entity from the widget">
+                    <input type="checkbox" checked={!!r.control} onchange={(e) => (r.control = e.currentTarget.checked || undefined)} />
+                    {r.key?.split('.')[0] && ['scene', 'script', 'button', 'input_button'].includes(r.key.split('.')[0]) ? 'Run button' : 'Switch'}
                   </label>
                 {/if}
                 <label class="check" title="Show this value when the widget is collapsed (up to four)">
@@ -936,6 +982,9 @@
                   </select>
                 {:else if r.type === 'var'}
                   {@render keyOptions(r, 'Pick a value…', Object.entries(sd?.vars ?? {}).map(([k, v]) => ({ value: k, label: `${k} · ${v}` })))}
+                {:else if r.type === 'entity'}
+                  <code class="eid" title="Home Assistant entity id">{r.key}</code>
+                  {#if found?.entityList && !entityMap.has(r.key ?? '')}<small class="bad">not found in Home Assistant</small>{/if}
                 {:else if r.type === 'client'}
                   <input bind:value={r.key} maxlength="100" list="clients-{r.id}" placeholder="Address, e.g. 192.168.1.20" aria-label="Address of the client" />
                   <datalist id="clients-{r.id}">
@@ -950,7 +999,7 @@
                 <input
                   bind:value={r.name}
                   maxlength="60"
-                  placeholder={r.key || typeLabels[r.type]}
+                  placeholder={(r.type === 'entity' ? entityMap.get(r.key ?? '')?.name : '') || r.key || typeLabels[r.type]}
                   aria-label="Name shown for this value"
                   disabled={(r.type === 'disk' || r.type === 'pool' || r.type === 'var') && !r.key}
                   title={(r.type === 'disk' || r.type === 'pool' || r.type === 'var') && !r.key ? 'Pick one to give it a name' : ''}
@@ -960,6 +1009,26 @@
           </li>
         {/each}
       </ul>
+      {#if ha}
+        <div class="addent">
+          <input
+            list="ha-entities"
+            bind:value={entityQuery}
+            disabled={!found?.entityList}
+            placeholder={found?.entityList ? '+ Add an entity: type a name or an id…' : 'Test the connection to list your entities'}
+            aria-label="Add an entity"
+            autocomplete="off"
+            spellcheck="false"
+            onchange={() => {
+              addEntity(entityQuery)
+              entityQuery = ''
+            }}
+          />
+          <datalist id="ha-entities">
+            {#each found?.entityList ?? [] as e (e.id)}<option value={e.id}>{e.name ?? ''} · {e.state}{e.unit ? ` ${e.unit}` : ''}</option>{/each}
+          </datalist>
+        </div>
+      {:else}
       <select
         class="add"
         aria-label="Add a value"
@@ -1108,6 +1177,7 @@
           </optgroup>
         {/if}
       </select>
+      {/if}
       <Slider label="Refresh every" unit="s" min={2} max={300} value={w.refresh} oninput={(v) => (w.refresh = v)} oncommit={noop} />
     </fieldset>
     {:else if tab === 'size'}
@@ -1366,6 +1436,21 @@
   .add {
     justify-self: start;
     max-width: 100%;
+  }
+  .addent {
+    display: grid;
+  }
+  .addent input {
+    width: 100%;
+    max-width: 460px;
+  }
+  .eid {
+    grid-column: 1 / -1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--muted);
+    font-size: 0.85rem;
   }
   @media (max-width: 760px) {
     .body {

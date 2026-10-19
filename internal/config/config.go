@@ -14,6 +14,8 @@ import (
 	"slices"
 	"strings"
 	"sync"
+
+	"github.com/Bagareal/homie/internal/homeassistant"
 )
 
 var hexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$`)
@@ -138,9 +140,10 @@ type Widget struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	// Kind is the data source: "glances", "truenas", "proxmox", "pbs" (Proxmox
-	// Backup Server) or "nut" (a UPS; its URL is nut://host[:port][/ups]). For
-	// Proxmox VE and Backup Server, Username is the API token id (user@realm!name)
-	// and Password its secret.
+	// Backup Server), "nut" (a UPS; its URL is nut://host[:port][/ups]) or
+	// "homeassistant". For Proxmox VE and Backup Server, Username is the API token id
+	// (user@realm!name) and Password its secret; for Home Assistant, Password is a
+	// long-lived access token.
 	Kind     string `json:"kind"`
 	URL      string `json:"url"`
 	Username string `json:"username,omitempty"`
@@ -247,6 +250,10 @@ type Row struct {
 	// Role, for a client row of a UPS: "primary" or "secondary" (upsd does not
 	// report it, so it is what the user says the machine is).
 	Role string `json:"role,omitempty"`
+	// Control, for a Home Assistant row: the row has a switch (or a button) and
+	// Homie may send commands for this entity. Only the entities that were given
+	// one can ever be switched, and only the kinds in homeassistant.Actions.
+	Control bool `json:"control,omitempty"`
 }
 
 const (
@@ -263,6 +270,8 @@ var RowTypes = map[string][]string{
 	"proxmox": {"cpu", "mem", "uptime", "version", "nodes", "lxc", "vm", "guest", "storage", "backup", "quorum", "tasks"},
 	"pbs":     {"cpu", "mem", "uptime", "version", "datastore", "group", "backup", "tasks"},
 	"nut":     {"status", "charge", "runtime", "upsload", "power", "voltage", "model", "var", "clients", "client"},
+	// A Home Assistant row is one entity (its id is the row's Key).
+	"homeassistant": {"entity"},
 }
 
 type Config struct {
@@ -697,7 +706,12 @@ func (c Config) validateWidgets(seen map[string]bool) error {
 			// TrueNAS revokes an API key that is sent without TLS.
 			return fmt.Errorf("widget %q: a TrueNAS address must start with https://", w.Name)
 		}
-		if len(w.Username) > 100 || len(w.Password) > 200 {
+		// A Home Assistant access token is a long JWT.
+		maxSecret := 200
+		if w.Kind == "homeassistant" {
+			maxSecret = 2000
+		}
+		if len(w.Username) > 100 || len(w.Password) > maxSecret {
 			return fmt.Errorf("username or password of widget %q is too long", w.Name)
 		}
 		if (w.Kind == "proxmox" || w.Kind == "pbs") && !(strings.Contains(w.Username, "@") && strings.Contains(w.Username, "!")) {
@@ -821,6 +835,12 @@ func validateRows(w Widget) error {
 		}
 		if r.Type == "client" && r.Key == "" {
 			return fmt.Errorf("widget %q: a client needs its address", w.Name)
+		}
+		if r.Type == "entity" && !homeassistant.EntityID.MatchString(r.Key) {
+			return fmt.Errorf("widget %q: %q is not a Home Assistant entity id (like sensor.power or light.desk)", w.Name, r.Key)
+		}
+		if r.Control && !(r.Type == "entity" && r.Source == "" && homeassistant.Controllable(r.Key)) {
+			return fmt.Errorf("widget %q: %q cannot be controlled from Homie", w.Name, r.Key)
 		}
 		// A Proxmox node's (or a Backup Server's) CPU row has no temperature: that comes from Glances.
 		if r.Type == "cpu" && !r.Load && !r.Temp && !((w.Kind == "proxmox" || w.Kind == "pbs") && r.Source == "") {

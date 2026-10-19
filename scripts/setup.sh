@@ -92,6 +92,15 @@ chmod 755 /usr/local/bin/homie-update
 # /usr/local/bin isn't on PATH in a bare `pct enter`/`pct exec` shell; /usr/sbin is.
 ln -sf /usr/local/bin/homie-update /usr/sbin/update
 
+# Forgot the password: forget the account, then create a new one in the browser.
+cat >/usr/local/bin/homie-reset-password <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+HOMIE_DATA="${DATA}" exec "${BIN}" reset-password
+EOF
+chmod 755 /usr/local/bin/homie-reset-password
+ln -sf /usr/local/bin/homie-reset-password /usr/sbin/homie-reset-password
+
 systemctl daemon-reload
 systemctl enable homie >/dev/null 2>&1
 systemctl restart homie

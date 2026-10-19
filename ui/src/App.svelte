@@ -1,6 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { app } from './lib/state.svelte'
+  import { auth } from './lib/auth.svelte'
+  import Login from './components/Login.svelte'
+  import Locked from './components/Locked.svelte'
   import Dashboard from './components/Dashboard.svelte'
   import Settings from './components/Settings.svelte'
   import Toast from './components/Toast.svelte'
@@ -16,8 +19,8 @@
   onMount(() => {
     const onHash = () => (route = routeFromHash())
     window.addEventListener('hashchange', onHash)
-    app.load().then(() => loadUpdates()).catch((e: Error) => (loadError = e.message))
-    const look = () => document.visibilityState === 'visible' && void recheckUpdates()
+    auth.refresh().catch((e: Error) => (loadError = e.message))
+    const look = () => document.visibilityState === 'visible' && auth.state === 'ok' && void recheckUpdates()
     document.addEventListener('visibilitychange', look)
     const timer = setInterval(look, 30 * 60 * 1000)
     return () => {
@@ -25,6 +28,20 @@
       document.removeEventListener('visibilitychange', look)
       clearInterval(timer)
     }
+  })
+
+  // The dashboard is read once signed in (and again after a lock or a new sign-in).
+  let loading = false
+  $effect(() => {
+    if (auth.state !== 'ok' || app.config || loading) return
+    loading = true
+    app
+      .load()
+      .then(() => loadUpdates())
+      .catch((e: Error) => {
+        if (auth.state === 'ok') loadError = e.message
+      })
+      .finally(() => (loading = false))
   })
 
   // Theme, density, title, and custom colors follow the settings.
@@ -116,6 +133,12 @@
   <main class="state">
     <p>Could not load the dashboard: {loadError}. Check that the homie service is running with <code>systemctl status homie</code>.</p>
   </main>
+{:else if auth.state === 'loading'}
+  <main class="state"><p>Loading…</p></main>
+{:else if auth.state === 'setup' || auth.state === 'login'}
+  <Login />
+{:else if auth.state === 'locked'}
+  <Locked />
 {:else if !app.config}
   <main class="state"><p>Loading…</p></main>
 {:else if route === 'settings'}

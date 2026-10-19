@@ -35,6 +35,16 @@ class AppState {
     this.config = withWidgets(await api.getConfig())
   }
 
+  // Forgets everything that was read: the session ended or the device locked.
+  reset() {
+    this.config = null
+    this.widgetData = {}
+    this.status = {}
+    this.editing = false
+    this.ask?.resolve(null)
+    this.ask = null
+  }
+
   async save(message = 'Changes saved') {
     if (!this.config) return
     try {

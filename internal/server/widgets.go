@@ -12,6 +12,7 @@ import (
 
 	"github.com/Bagareal/homie/internal/config"
 	"github.com/Bagareal/homie/internal/glances"
+	"github.com/Bagareal/homie/internal/homeassistant"
 	"github.com/Bagareal/homie/internal/nut"
 	"github.com/Bagareal/homie/internal/pbs"
 	"github.com/Bagareal/homie/internal/proxmox"
@@ -27,6 +28,7 @@ type widgetCache struct {
 	nut     *nut.Client
 	proxmox *proxmox.Client
 	pbs     *pbs.Client
+	ha      *homeassistant.Client
 	mu      sync.Mutex
 	entries map[string]*widgetEntry
 }
@@ -39,7 +41,7 @@ type widgetEntry struct {
 }
 
 func newWidgetCache() *widgetCache {
-	return &widgetCache{glances: glances.New(), truenas: truenas.New(), nut: nut.New(), proxmox: proxmox.New(), pbs: pbs.New(), entries: map[string]*widgetEntry{}}
+	return &widgetCache{glances: glances.New(), truenas: truenas.New(), nut: nut.New(), proxmox: proxmox.New(), pbs: pbs.New(), ha: homeassistant.New(), entries: map[string]*widgetEntry{}}
 }
 
 // metricsOf lists which groups of values the rows of a widget need, so a
@@ -47,6 +49,19 @@ func newWidgetCache() *widgetCache {
 func metricsOf(kind string, rows []config.Row) []string {
 	if kind == "nut" {
 		return nil // a UPS is read whole, in one short conversation
+	}
+	if kind == "homeassistant" {
+		// What is asked for is the entities themselves, in a stable order.
+		seen := map[string]bool{}
+		var ids []string
+		for _, r := range rows {
+			if r.Type == "entity" && !seen[r.Key] {
+				seen[r.Key] = true
+				ids = append(ids, r.Key)
+			}
+		}
+		sort.Strings(ids)
+		return ids
 	}
 	if kind == "pbs" {
 		// The version decides whether the server counts as reachable, so it is always
@@ -157,6 +172,8 @@ func (c *widgetCache) fetchMain(ctx context.Context, w config.Widget) any {
 	switch w.Kind {
 	case "nut":
 		return c.nut.Fetch(ctx, nut.Target{URL: w.URL})
+	case "homeassistant":
+		return c.ha.Fetch(ctx, homeassistant.Target{URL: w.URL, Token: w.Password, Entities: metrics})
 	case "truenas":
 		return c.truenas.Fetch(ctx, truenas.Target{URL: w.URL, Username: w.Username, APIKey: w.Password, Metrics: metrics})
 	case "proxmox":
@@ -325,6 +342,13 @@ func (c *widgetCache) get(ctx context.Context, w config.Widget) any {
 	return e.result
 }
 
+// forget drops a widget's last reading, so the next one is fresh (after a command).
+func (c *widgetCache) forget(id string) {
+	c.mu.Lock()
+	delete(c.entries, id)
+	c.mu.Unlock()
+}
+
 // all reads every widget at once and forgets the ones that no longer exist.
 func (c *widgetCache) all(ctx context.Context, widgets []config.Widget) map[string]any {
 	out := make(map[string]any, len(widgets))
@@ -431,6 +455,8 @@ func (s *Server) testWidget(w http.ResponseWriter, r *http.Request) {
 			msg = "enter a valid address, starting with https:// (for example https://192.168.1.10:8006)"
 		case "pbs":
 			msg = "enter a valid address, starting with https:// (for example https://192.168.1.10:8007)"
+		case "homeassistant":
+			msg = "enter a valid address, starting with http:// or https:// (for example http://192.168.1.10:8123)"
 		}
 		writeError(w, http.StatusBadRequest, msg)
 		return
@@ -459,6 +485,27 @@ func (s *Server) testWidget(w http.ResponseWriter, r *http.Request) {
 	fail := func(err error) { writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()}) }
 
 	switch req.Kind {
+	case "homeassistant":
+		t := homeassistant.Target{URL: probe.URL, Token: pw}
+		if strings.TrimSpace(pw) == "" {
+			fail(errors.New("enter the long-lived access token first"))
+			return
+		}
+		version, location, err := s.widgets.ha.Ping(r.Context(), t)
+		if err != nil {
+			fail(err)
+			return
+		}
+		list, err := s.widgets.ha.List(r.Context(), t)
+		if err != nil {
+			fail(err)
+			return
+		}
+		name := "Home Assistant " + version
+		if location != "" {
+			name += " · " + location
+		}
+		reply(name, map[string]any{"entityList": list})
 	case "nut":
 		t := nut.Target{URL: probe.URL}
 		list, err := s.widgets.nut.Ping(r.Context(), t)
@@ -598,4 +645,65 @@ func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 		return false
 	}
 	return true
+}
+
+// widgetCommand switches an entity of a Home Assistant widget. What may be switched
+// is decided here, from the saved widget: the row must exist, have been given a
+// switch (Control) and be of a kind in homeassistant.Actions. The request names a
+// row and an action, never an entity or a service.
+func (s *Server) widgetCommand(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Row    string `json:"row"`
+		Action string `json:"action"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	var widget *config.Widget
+	for _, saved := range s.store.Get().Widgets {
+		if saved.ID == r.PathValue("id") {
+			saved := saved
+			widget = &saved
+		}
+	}
+	if widget == nil || widget.Kind != "homeassistant" {
+		writeError(w, http.StatusNotFound, "this widget does not exist")
+		return
+	}
+	var row *config.Row
+	for _, candidate := range widget.Rows {
+		if candidate.ID == req.Row {
+			candidate := candidate
+			row = &candidate
+		}
+	}
+	if row == nil || row.Type != "entity" || !row.Control {
+		writeError(w, http.StatusForbidden, "this value has no switch")
+		return
+	}
+	svc, err := homeassistant.ServiceFor(row.Key, req.Action)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	t := homeassistant.Target{URL: widget.URL, Token: widget.Password}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	if err := s.widgets.ha.Call(ctx, t, svc, row.Key); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	s.widgets.forget(widget.ID)
+	// Home Assistant answers before a lamp or a plug has always changed: give it a moment
+	// and report what it says now, the page reads again in a second anyway.
+	select {
+	case <-time.After(400 * time.Millisecond):
+	case <-ctx.Done():
+	}
+	e, err := s.widgets.ha.Entity(ctx, t, row.Key)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "entity": e})
 }

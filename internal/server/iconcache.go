@@ -241,9 +241,9 @@ func (s *Server) cdnIcon(w http.ResponseWriter, r *http.Request) {
 	h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
 	h.Set("X-Content-Type-Options", "nosniff")
 	if dir == "index" {
-		h.Set("Cache-Control", "public, max-age=3600")
+		h.Set("Cache-Control", "private, max-age=3600")
 	} else {
-		h.Set("Cache-Control", "public, max-age=604800")
+		h.Set("Cache-Control", "private, max-age=604800")
 	}
 	http.ServeFile(w, r, p)
 }
