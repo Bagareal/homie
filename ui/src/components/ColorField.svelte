@@ -159,8 +159,20 @@
   .hex.invalid {
     border-color: var(--down);
   }
+  /* "default" and the Reset button take the same box, so the row does not move when a
+     color goes from the theme's own to a custom one. */
+  .tag,
+  .color > button {
+    box-sizing: border-box;
+    width: 4.75rem;
+    height: 30px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+  }
   .tag {
     color: var(--muted);
-    font-size: 0.85rem;
   }
 </style>

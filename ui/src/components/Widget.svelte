@@ -1166,6 +1166,11 @@
     background: #fff;
     opacity: 1;
   }
+  /* The switch keeps its own colors on hover: the "Text on hover" setting is for tiles and
+     buttons, and the knob and the border are drawn with the text color. */
+  .sw:hover {
+    color: var(--text);
+  }
   .sw:hover:not(:disabled) {
     background: color-mix(in srgb, currentColor 22%, transparent);
   }
