@@ -92,7 +92,9 @@
                 <img src={`icons/${encodeURIComponent(n)}`} alt="" />
                 <span class="label">{n}</span>
               </button>
-              <button type="button" class="del" title="Delete {n}" aria-label="Delete {n}" onclick={() => removeMine(n)}>×</button>
+              <button type="button" class="del" title="Delete {n}" aria-label="Delete {n}" onclick={() => removeMine(n)}>
+                <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M1.5 1.5l7 7m0-7l-7 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none" /></svg>
+              </button>
             </div>
           {/each}
         </div>
@@ -225,11 +227,11 @@
     position: absolute;
     top: 2px;
     right: 2px;
-    width: 22px;
-    height: 22px;
+    width: 20px;
+    height: 20px;
     padding: 0;
-    line-height: 1;
-    border-radius: 50%;
+    justify-content: center;
+    border-radius: 4px;
   }
   .more {
     margin: 12px auto 0;
