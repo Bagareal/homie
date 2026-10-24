@@ -2,6 +2,8 @@
   import { onMount } from 'svelte'
   import { loadIconIndex, searchIcons, type IconEntry } from '../lib/iconIndex'
   import { listOwnIcons, removeOwnIcon, uploadOwnIcon } from '../lib/api'
+  import { cropIcon } from '../lib/cropIcon'
+  import { app } from '../lib/state.svelte'
 
   let { current, onpick, onclose }: { current: string; onpick: (value: string) => void; onclose: () => void } = $props()
 
@@ -30,7 +32,7 @@
     busy = true
     uploadError = ''
     try {
-      onpick((await uploadOwnIcon(file)).value)
+      onpick((await uploadOwnIcon(await cropIcon(file))).value)
     } catch (e) {
       uploadError = e instanceof Error ? e.message : 'could not upload the icon'
     } finally {
@@ -39,7 +41,13 @@
   }
 
   async function removeMine(name: string) {
-    if (!confirm(`Delete “${name}”? Services using it will show their initials.`)) return
+    const ok = await app.confirm({
+      title: 'Delete icon',
+      message: `Delete “${name}”? Services using it will show their initials.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    })
+    if (!ok) return
     try {
       await removeOwnIcon(name)
       mine = mine.filter((n) => n !== name)

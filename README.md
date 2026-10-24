@@ -49,7 +49,7 @@ The configuration can also be exported and imported from the Settings page; the 
 
 In a service's edit dialog, **Search icons** opens a picker with the [dashboard-icons](https://github.com/homarr-labs/dashboard-icons) and [selfh.st](https://selfh.st/icons) collections (searchable by name, alias, and category, with the light/dark variants listed separately); click one to fill the field. Homie downloads each icon itself the first time it is shown (from GitHub, falling back to jsDelivr) and keeps it in its data folder, so your browser never needs to reach a CDN.
 
-The picker also has a **My icons** section: **Upload PNG or SVG** adds your own icon (up to 1 MB; the file is checked by its content) to `/var/lib/homie/icons/` and picks it right away; the × on an icon deletes it. Uploaded files are never overwritten, a repeated name gets `-2`, `-3`...
+The picker also has a **My icons** section: **Upload PNG or SVG** adds your own icon (up to 1 MB; the file is checked by its content) to `/var/lib/homie/icons/` and picks it right away; the × on an icon deletes it. Empty margins around the drawing are trimmed on upload (an SVG keeps being a vector), so the icon fills its tile. Uploaded files are never overwritten, a repeated name gets `-2`, `-3`...
 
 You can also type in the Icon field:
 
