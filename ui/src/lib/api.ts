@@ -159,3 +159,15 @@ export const uploadBackground = (file: File) => {
 }
 
 export const removeBackground = () => request<Config>('api/background', { method: 'DELETE' })
+
+// ---- the owner's own icons (PNG or SVG kept in <data>/icons)
+
+export const listOwnIcons = () => request<{ icons: string[] }>('api/icons').then((r) => r.icons)
+
+export const uploadOwnIcon = (file: File) => {
+  const form = new FormData()
+  form.append('file', file)
+  return request<{ name: string; value: string }>('api/icons', { method: 'POST', body: form })
+}
+
+export const removeOwnIcon = (name: string) => request<{ ok: boolean }>(`api/icons/${encodeURIComponent(name)}`, { method: 'DELETE' })

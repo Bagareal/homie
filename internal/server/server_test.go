@@ -4,6 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"image"
+	pngpkg "image/png"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -678,5 +681,67 @@ func TestMetricsOfAPoolWithATemperatureReadsTheDrives(t *testing.T) {
 	}
 	if got := metricsOf("truenas", []config.Row{{Type: "pool", Temp: true}}); strings.Join(got, ",") != "pools,drives" {
 		t.Errorf("a pool with its temperature: %v", got)
+	}
+}
+
+func uploadIconReq(t *testing.T, h http.Handler, filename string, data []byte) *httptest.ResponseRecorder {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, _ := mw.CreateFormFile("file", filename)
+	fw.Write(data)
+	mw.Close()
+	r := httptest.NewRequest("POST", "/api/icons", &buf)
+	r.Header.Set("Content-Type", mw.FormDataContentType())
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	return w
+}
+
+func TestUploadOwnIcons(t *testing.T) {
+	s := newTestServer(t)
+	h := authed(s)
+
+	var png bytes.Buffer
+	if err := pngpkg.Encode(&png, image.NewRGBA(image.Rect(0, 0, 4, 4))); err != nil {
+		t.Fatal(err)
+	}
+	svg := []byte(`<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4"/></svg>`)
+
+	w := uploadIconReq(t, h, "My Logo!.PNG", png.Bytes())
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"/icons/my-logo.png"`) {
+		t.Fatalf("png upload: %d %s", w.Code, w.Body.String())
+	}
+	// The same name is never overwritten.
+	if w := uploadIconReq(t, h, "my-logo.png", png.Bytes()); !strings.Contains(w.Body.String(), `"/icons/my-logo-2.png"`) {
+		t.Fatalf("second upload: %d %s", w.Code, w.Body.String())
+	}
+	if w := uploadIconReq(t, h, "../../evil.svg", svg); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"/icons/evil.svg"`) {
+		t.Fatalf("svg upload: %d %s", w.Code, w.Body.String())
+	}
+	// By content, not by extension.
+	if w := uploadIconReq(t, h, "x.png", []byte("<html><script>alert(1)</script></html>")); w.Code != http.StatusBadRequest {
+		t.Fatalf("html named png: %d", w.Code)
+	}
+	if w := uploadIconReq(t, h, "x.svg", []byte("not xml")); w.Code != http.StatusBadRequest {
+		t.Fatalf("junk svg: %d", w.Code)
+	}
+
+	w = doJSON(t, h, "GET", "/api/icons", nil)
+	if !strings.Contains(w.Body.String(), `["evil.svg","my-logo-2.png","my-logo.png"]`) {
+		t.Fatalf("list: %s", w.Body.String())
+	}
+	w = doJSON(t, h, "GET", "/icons/evil.svg", nil)
+	if w.Code != http.StatusOK || !strings.Contains(w.Header().Get("Content-Security-Policy"), "sandbox") {
+		t.Fatalf("serve svg: %d %v", w.Code, w.Header())
+	}
+	if w := doJSON(t, h, "DELETE", "/api/icons/my-logo.png", nil); w.Code != http.StatusOK {
+		t.Fatalf("delete: %d", w.Code)
+	}
+	if w := doJSON(t, h, "DELETE", "/api/icons/..%2Fconfig.json", nil); w.Code == http.StatusOK {
+		t.Fatalf("traversal delete accepted")
+	}
+	if _, err := os.Stat(filepath.Join(s.dataDir, "icons", "my-logo.png")); err == nil {
+		t.Fatal("icon not deleted")
 	}
 }

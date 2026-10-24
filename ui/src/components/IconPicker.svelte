@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { loadIconIndex, searchIcons, type IconEntry } from '../lib/iconIndex'
+  import { listOwnIcons, removeOwnIcon, uploadOwnIcon } from '../lib/api'
 
   let { current, onpick, onclose }: { current: string; onpick: (value: string) => void; onclose: () => void } = $props()
 
@@ -13,6 +14,39 @@
   let shown = $state(PAGE)
 
   const results = $derived(searchIcons(all, query))
+
+  // The owner's own icons (uploaded PNG / SVG files).
+  let mine = $state<string[]>([])
+  let fileInput: HTMLInputElement
+  let busy = $state(false)
+  let uploadError = $state('')
+  const q = $derived(query.trim().toLowerCase())
+  const myShown = $derived(q ? mine.filter((n) => n.toLowerCase().includes(q)) : mine)
+
+  async function upload() {
+    const file = fileInput.files?.[0]
+    fileInput.value = ''
+    if (!file) return
+    busy = true
+    uploadError = ''
+    try {
+      onpick((await uploadOwnIcon(file)).value)
+    } catch (e) {
+      uploadError = e instanceof Error ? e.message : 'could not upload the icon'
+    } finally {
+      busy = false
+    }
+  }
+
+  async function removeMine(name: string) {
+    if (!confirm(`Delete “${name}”? Services using it will show their initials.`)) return
+    try {
+      await removeOwnIcon(name)
+      mine = mine.filter((n) => n !== name)
+    } catch (e) {
+      uploadError = e instanceof Error ? e.message : 'could not delete the icon'
+    }
+  }
 
   function load() {
     status = 'loading'
@@ -28,6 +62,7 @@
   onMount(() => {
     dialog.showModal()
     load()
+    listOwnIcons().then((l) => (mine = l), () => {})
   })
 
   $effect(() => {
@@ -41,6 +76,30 @@
     <h2>Search icons</h2>
     <!-- svelte-ignore a11y_autofocus -->
     <input type="search" bind:value={query} placeholder="Search by name, e.g. proxmox, jellyfin, nas…" aria-label="Search icons" autofocus />
+
+    <div class="mine">
+      <div class="mine-head">
+        <strong>My icons</strong>
+        <button type="button" disabled={busy} onclick={() => fileInput.click()}>{busy ? 'Uploading…' : 'Upload PNG or SVG'}</button>
+        <input bind:this={fileInput} type="file" accept=".png,.svg,image/png,image/svg+xml" hidden onchange={upload} />
+      </div>
+      {#if uploadError}<p class="form-error" role="alert">{uploadError}</p>{/if}
+      {#if myShown.length > 0}
+        <div class="icons own">
+          {#each myShown as n (n)}
+            <div class="own-cell">
+              <button type="button" class="pick" class:on={current === `/icons/${n}`} title={n} onclick={() => onpick(`/icons/${n}`)}>
+                <img src={`icons/${encodeURIComponent(n)}`} alt="" />
+                <span class="label">{n}</span>
+              </button>
+              <button type="button" class="del" title="Delete {n}" aria-label="Delete {n}" onclick={() => removeMine(n)}>×</button>
+            </div>
+          {/each}
+        </div>
+      {:else if mine.length === 0}
+        <p class="note">Nothing yet. Upload your own icon (up to 1 MB) and it is kept here.</p>
+      {/if}
+    </div>
 
     {#if status === 'loading'}
       <p class="note">Loading the icon list…</p>
@@ -141,6 +200,36 @@
     line-height: 1.5;
     text-transform: uppercase;
     letter-spacing: 0.04em;
+  }
+  .mine {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 30%;
+    overflow-y: auto;
+  }
+  .mine-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .own-cell {
+    position: relative;
+    display: flex;
+  }
+  .own-cell .pick {
+    flex: 1;
+  }
+  .del {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    line-height: 1;
+    border-radius: 50%;
   }
   .more {
     margin: 12px auto 0;

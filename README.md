@@ -49,11 +49,13 @@ The configuration can also be exported and imported from the Settings page; the 
 
 In a service's edit dialog, **Search icons** opens a picker with the [dashboard-icons](https://github.com/homarr-labs/dashboard-icons) and [selfh.st](https://selfh.st/icons) collections (searchable by name, alias, and category, with the light/dark variants listed separately); click one to fill the field. Homie downloads each icon itself the first time it is shown (from GitHub, falling back to jsDelivr) and keeps it in its data folder, so your browser never needs to reach a CDN.
 
+The picker also has a **My icons** section: **Upload PNG or SVG** adds your own icon (up to 1 MB; the file is checked by its content) to `/var/lib/homie/icons/` and picks it right away; the × on an icon deletes it. Uploaded files are never overwritten, a repeated name gets `-2`, `-3`...
+
 You can also type in the Icon field:
 
 - the name of an icon from the [dashboard-icons](https://github.com/homarr-labs/dashboard-icons) collection, for example `proxmox`, `truenas-scale`, `adguard-home`, `jellyfin` (a bare name is looked up in dashboard-icons first, then in selfh.st, and icons that only exist as SVG or WebP are found automatically; `selfhst:name` forces selfh.st)
 - the full address of an image
-- a file placed in `/var/lib/homie/icons/`, for example `/icons/router.png`
+- a file in `/var/lib/homie/icons/` (uploaded from the picker, or copied there by hand), for example `/icons/router.png`
 - an emoji or a single character
 
 If the field is empty or the icon fails to load, the tile shows the service's initials.

@@ -101,6 +101,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/version", s.getVersion)
 	mux.HandleFunc("GET /api/releases", s.getReleases)
 	mux.HandleFunc("GET /icons/{name}", s.icon)
+	mux.HandleFunc("GET /api/icons", s.listIcons)
+	mux.HandleFunc("POST /api/icons", s.uploadIcon)
+	mux.HandleFunc("DELETE /api/icons/{name}", s.deleteIcon)
 	mux.HandleFunc("GET /cdn/{collection}/{dir}/{file}", s.cdnIcon)
 	mux.HandleFunc("POST /api/background", s.uploadBackground)
 	mux.HandleFunc("DELETE /api/background", s.deleteBackground)
@@ -165,6 +168,9 @@ func (s *Server) icon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "private, max-age=86400")
+	// An SVG opened as a page (not as an <img>) must not run anything.
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	http.ServeFile(w, r, filepath.Join(s.dataDir, "icons", name))
 }
 
